@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { parseActivityDetailPage, parseAdventurePage, parseRankIndex, parseRankPage } from "../ingest/parse.js";
-import { activityPageFixture, adventurePageFixture, rankIndexFixture, rankPageFixture } from "./fixtures.js";
+import { activityPageFixture, adventurePageFixture, noisyActivityPageFixture, rankIndexFixture, rankPageFixture } from "./fixtures.js";
 import type { Rank } from "../shared/types.js";
 
 const rank: Rank = {
@@ -46,10 +46,14 @@ describe("ingest parsers", () => {
       snapshot: ""
     };
     const bundle = parseAdventurePage(adventurePageFixture, adventure);
-    expect(bundle.requirements).toHaveLength(2);
-    expect(bundle.activities).toHaveLength(2);
+    expect(bundle.requirements).toHaveLength(3);
+    expect(bundle.activities).toHaveLength(4);
     expect(bundle.activities[0]).toMatchObject({
       name: "Den Doodle Lion",
+      requirementId: bundle.requirements[0].id
+    });
+    expect(bundle.activities[1]).toMatchObject({
+      name: "Den Flag Lion",
       requirementId: bundle.requirements[0].id
     });
     expect(bundle.adventure.snapshot).toContain("first required Adventure");
@@ -74,5 +78,29 @@ describe("ingest parsers", () => {
 
     expect(enriched.previewDetails).toContain("Gather scouts in a circle");
     expect(enriched.previewDetails).toContain("Use simple prompts");
+  });
+
+  test("filters script-like tooltip content from an activity detail page", () => {
+    const enriched = parseActivityDetailPage(noisyActivityPageFixture, {
+      id: "sample",
+      adventureId: "lion__bobcat-lion",
+      requirementId: "req-1",
+      name: "Den Doodle Lion",
+      slug: "den-doodle-lion",
+      sourceUrl: "https://www.scouting.org/cub-scout-activities/den-doodle-lion/",
+      summary: "The den doodle is a craft project.",
+      location: "Indoor",
+      prepMinutes: 10,
+      durationMinutes: 15,
+      difficulty: 2,
+      notes: "",
+      previewDetails: ""
+    });
+
+    expect(enriched.previewDetails).toContain("The den doodle is a craft project");
+    expect(enriched.previewDetails).toContain("Let each scout add one piece");
+    expect(enriched.previewDetails).not.toContain("jQuery(window)");
+    expect(enriched.previewDetails).not.toContain("elementor/frontend/init");
+    expect(enriched.previewDetails).not.toContain("Lion - Kindergarten Den Doodle Lion Indoor");
   });
 });
