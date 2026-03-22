@@ -18,3 +18,30 @@ export function chunkedDuration(total: number, chunks: number, minimum = 5): num
   const remainder = safeTotal % chunks;
   return Array.from({ length: chunks }, (_, index) => base + (index < remainder ? 1 : 0));
 }
+
+export function normalizeAdventureTrailBucket(category: string, kind: "required" | "elective"): string {
+  if (kind === "elective") {
+    return "electives";
+  }
+
+  const normalized = category.toLowerCase().replace(/[^a-z]+/g, " ").trim();
+  if (normalized.includes("character") || normalized.includes("leadership")) {
+    return "character-leadership";
+  }
+  if (normalized.includes("outdoor")) {
+    return "outdoors";
+  }
+  if (normalized.includes("fitness")) {
+    return "personal-fitness";
+  }
+  if (normalized.includes("citizen")) {
+    return "citizenship";
+  }
+  if (normalized.includes("safety")) {
+    return "personal-safety";
+  }
+  if (normalized.includes("family") || normalized.includes("rever")) {
+    return "family-reverence";
+  }
+  return "electives";
+}
