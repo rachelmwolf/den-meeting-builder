@@ -5,6 +5,11 @@ import type {
   Activity,
   Adventure,
   AdventureBundle,
+  AdventureTrailBucket,
+  AdventureTrailBucketKey,
+  AdventureTrailData,
+  AdventureTrailProgress,
+  AdventureTrailProgressBucket,
   ContentStatus,
   DenProfile,
   ImportedRankStatus,
@@ -20,6 +25,7 @@ import type {
   YearPlanMonth
 } from "../shared/types.js";
 import { demoContent } from "../shared/demo.js";
+import { normalizeAdventureTrailBucket } from "../shared/utils.js";
 
 const dataDir = join(process.cwd(), "data");
 const defaultDbPath = process.env.VITEST
@@ -388,7 +394,9 @@ export function ensureDemoSeed(): void {
   }
   if (countRows("ranks") === 0) {
     upsertRank(demoContent.rank);
-    upsertAdventure(demoContent.adventure);
+    for (const adventure of demoContent.adventures) {
+      upsertAdventure(adventure);
+    }
     for (const requirement of demoContent.requirements) {
       upsertRequirement(requirement);
     }
@@ -443,6 +451,17 @@ export function listAdventuresForRank(rankId: string): Adventure[] {
     .map((row) => mapAdventure(row as Record<string, unknown>));
 }
 
+export function listRequirementsForAdventureIds(adventureIds: string[]): Requirement[] {
+  if (adventureIds.length === 0) {
+    return [];
+  }
+  const placeholders = adventureIds.map(() => "?").join(", ");
+  return db
+    .prepare(`SELECT * FROM requirements WHERE adventure_id IN (${placeholders}) ORDER BY adventure_id, requirement_number`)
+    .all(...adventureIds)
+    .map((row) => mapRequirement(row as Record<string, unknown>));
+}
+
 export function getAdventureBundle(adventureId: string): AdventureBundle | null {
   const adventureRow = db.prepare("SELECT * FROM adventures WHERE id = ?").get(adventureId) as Record<string, unknown> | undefined;
   if (!adventureRow) {
@@ -457,6 +476,12 @@ export function getAdventureBundle(adventureId: string): AdventureBundle | null 
     .all(adventureId)
     .map((row) => mapActivity(row as Record<string, unknown>));
   return { adventure: mapAdventure(adventureRow), requirements, activities };
+}
+
+export function getAdventureBundles(adventureIds: string[]): AdventureBundle[] {
+  return adventureIds
+    .map((adventureId) => getAdventureBundle(adventureId))
+    .filter((bundle): bundle is AdventureBundle => Boolean(bundle));
 }
 
 export function getRank(rankId: string): Rank | null {
@@ -498,6 +523,100 @@ export function getContentStatus(): ContentStatus {
   };
 }
 
+const trailBucketMeta: Array<{
+  key: AdventureTrailBucketKey;
+  label: string;
+  required: boolean;
+  targetCount: number;
+}> = [
+  { key: "character-leadership", label: "Character & Leadership", required: true, targetCount: 1 },
+  { key: "outdoors", label: "Outdoors", required: true, targetCount: 1 },
+  { key: "personal-fitness", label: "Personal Fitness", required: true, targetCount: 1 },
+  { key: "citizenship", label: "Citizenship", required: true, targetCount: 1 },
+  { key: "personal-safety", label: "Personal Safety", required: true, targetCount: 1 },
+  { key: "family-reverence", label: "Family & Reverence", required: true, targetCount: 1 },
+  { key: "electives", label: "Electives", required: false, targetCount: 2 }
+];
+
+function getTrailBucketsForRank(rankId: string): AdventureTrailBucket[] {
+  const adventures = listAdventuresForRank(rankId);
+  return trailBucketMeta.map((meta) => ({
+    key: meta.key,
+    label: meta.label,
+    required: meta.required,
+    adventures: adventures.filter(
+      (adventure) => normalizeAdventureTrailBucket(adventure.category, adventure.kind) === meta.key
+    )
+  }));
+}
+
+function getSavedPlanAdventureIds(savedPlan: SavedMeetingPlan): string[] {
+  if (Array.isArray(savedPlan.payload.adventures) && savedPlan.payload.adventures.length > 0) {
+    return savedPlan.payload.adventures.map((adventure) => adventure.id);
+  }
+  return savedPlan.adventureId ? [savedPlan.adventureId] : [];
+}
+
+function buildTrailProgress(denId: string): AdventureTrailProgress {
+  const den = getDenProfile(denId);
+  if (!den) {
+    return {
+      buckets: trailBucketMeta.map((meta) => ({
+        key: meta.key,
+        label: meta.label,
+        required: meta.required,
+        targetCount: meta.targetCount,
+        completedCount: 0,
+        completedAdventureIds: []
+      })),
+      electiveTargetCount: 2,
+      electiveCompletedCount: 0
+    };
+  }
+
+  const completedByBucket = new Map<AdventureTrailBucketKey, Set<string>>();
+  for (const meta of trailBucketMeta) {
+    completedByBucket.set(meta.key, new Set());
+  }
+
+  for (const savedPlan of listSavedPlansForDen(denId)) {
+    for (const adventureId of getSavedPlanAdventureIds(savedPlan)) {
+      const bundle = getAdventureBundle(adventureId);
+      if (!bundle) {
+        continue;
+      }
+      const bucketKey = normalizeAdventureTrailBucket(bundle.adventure.category, bundle.adventure.kind) as AdventureTrailBucketKey;
+      completedByBucket.get(bucketKey)?.add(adventureId);
+    }
+  }
+
+  const buckets: AdventureTrailProgressBucket[] = trailBucketMeta.map((meta) => ({
+    key: meta.key,
+    label: meta.label,
+    required: meta.required,
+    targetCount: meta.targetCount,
+    completedCount: completedByBucket.get(meta.key)?.size ?? 0,
+    completedAdventureIds: Array.from(completedByBucket.get(meta.key) ?? [])
+  }));
+
+  return {
+    buckets,
+    electiveTargetCount: 2,
+    electiveCompletedCount: completedByBucket.get("electives")?.size ?? 0
+  };
+}
+
+export function getAdventureTrailData(denId: string): AdventureTrailData | null {
+  const den = getDenProfile(denId);
+  if (!den) {
+    return null;
+  }
+  return {
+    buckets: getTrailBucketsForRank(den.rankId),
+    progress: buildTrailProgress(denId)
+  };
+}
+
 export function resetContentForTests(): void {
   db.exec(`
     DELETE FROM source_snapshots;
@@ -513,11 +632,12 @@ export function resetContentForTests(): void {
 }
 
 export function saveMeetingPlan(input: SaveMeetingPlanRequest): SavedMeetingPlan {
+  const primaryAdventureId = input.payload.adventures[0]?.id ?? input.payload.request.adventureIds[0] ?? "";
   const savedPlan: SavedMeetingPlan = {
     id: input.payload.id,
     denId: input.denId,
     rankId: input.payload.rank.id,
-    adventureId: input.payload.adventure.id,
+    adventureId: primaryAdventureId,
     title: input.title,
     plannedDate: input.plannedDate,
     monthKey: input.monthKey,
@@ -640,6 +760,7 @@ export function buildYearPlan(denId: string): YearPlan | null {
   }
   return {
     den,
+    trailProgress: buildTrailProgress(denId),
     months: Array.from(grouped.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey))
   };
 }
