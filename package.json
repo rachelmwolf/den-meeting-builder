@@ -8,9 +8,12 @@
     "build": "tsc -b && vite build",
     "start": "node dist-server/server/index.js",
     "test": "vitest run",
+    "publish:connector": "bash scripts/publish-via-connector.sh",
     "ingest:all": "tsx ingest/cli.ts all",
     "ingest:rank": "tsx ingest/cli.ts rank",
+    "refresh:rank": "tsx ingest/cli.ts rank",
     "ingest:adventure": "tsx ingest/cli.ts adventure",
+    "repair:previews": "tsx ingest/repairPreviews.ts",
     "seed:demo": "tsx ingest/seedDemo.ts"
   },
   "dependencies": {
