@@ -36,6 +36,11 @@ if [[ -n "$(git status --short)" ]]; then
   exit 1
 fi
 
+if [[ "${SKIP_PUBLISH_VERIFY:-0}" != "1" ]]; then
+  echo "running checkpoint verification"
+  npm run verify:checkpoint
+fi
+
 if git rev-parse --verify "$state_local_ref" >/dev/null 2>&1; then
   publish_base="$(git rev-parse "$state_local_ref")"
 else
@@ -70,7 +75,7 @@ fi
 changed_entries="$(git diff --name-status "${publish_base}..${local_head}")"
 
 if [[ -z "$changed_entries" ]]; then
-  echo "no tracked file changes found between ${expected_parent} and ${local_head}"
+  echo "no tracked file changes found between ${publish_base} and ${local_head}"
   exit 0
 fi
 
