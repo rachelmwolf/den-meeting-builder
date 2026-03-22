@@ -545,7 +545,7 @@ function getTrailBucketsForRank(rankId: string): AdventureTrailBucket[] {
     label: meta.label,
     required: meta.required,
     adventures: adventures.filter(
-      (adventure) => normalizeAdventureTrailBucket(adventure.category, adventure.kind) === meta.key
+      (adventure) => normalizeAdventureTrailBucket(adventure.category, adventure.kind, adventure.name) === meta.key
     )
   }));
 }
@@ -585,7 +585,11 @@ function buildTrailProgress(denId: string): AdventureTrailProgress {
       if (!bundle) {
         continue;
       }
-      const bucketKey = normalizeAdventureTrailBucket(bundle.adventure.category, bundle.adventure.kind) as AdventureTrailBucketKey;
+      const bucketKey = normalizeAdventureTrailBucket(
+        bundle.adventure.category,
+        bundle.adventure.kind,
+        bundle.adventure.name
+      ) as AdventureTrailBucketKey;
       completedByBucket.get(bucketKey)?.add(adventureId);
     }
   }
