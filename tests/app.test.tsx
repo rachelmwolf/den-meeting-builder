@@ -1,12 +1,55 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { App } from "../src/App.js";
 import { demoContent } from "../shared/demo.js";
-import type { MeetingPlan, SavedMeetingPlan, YearPlan } from "../shared/types.js";
+import type {
+  AdventureTrailData,
+  MeetingPlan,
+  SavedMeetingPlan,
+  YearPlan
+} from "../shared/types.js";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
+
+function buildTrailData(): AdventureTrailData {
+  return {
+    buckets: [
+      {
+        key: "character-leadership",
+        label: "Character & Leadership",
+        required: true,
+        adventures: [demoContent.adventures[0]]
+      },
+      {
+        key: "personal-fitness",
+        label: "Personal Fitness",
+        required: true,
+        adventures: [demoContent.adventures[1]]
+      },
+      {
+        key: "electives",
+        label: "Electives",
+        required: false,
+        adventures: [demoContent.adventures[2]]
+      }
+    ],
+    progress: {
+      buckets: [
+        { key: "character-leadership", label: "Character & Leadership", required: true, targetCount: 1, completedCount: 1, completedAdventureIds: [demoContent.adventures[0].id] },
+        { key: "outdoors", label: "Outdoors", required: true, targetCount: 1, completedCount: 0, completedAdventureIds: [] },
+        { key: "personal-fitness", label: "Personal Fitness", required: true, targetCount: 1, completedCount: 0, completedAdventureIds: [] },
+        { key: "citizenship", label: "Citizenship", required: true, targetCount: 1, completedCount: 0, completedAdventureIds: [] },
+        { key: "personal-safety", label: "Personal Safety", required: true, targetCount: 1, completedCount: 0, completedAdventureIds: [] },
+        { key: "family-reverence", label: "Family & Reverence", required: true, targetCount: 1, completedCount: 0, completedAdventureIds: [] },
+        { key: "electives", label: "Electives", required: false, targetCount: 2, completedCount: 1, completedAdventureIds: [demoContent.adventures[2].id] }
+      ],
+      electiveTargetCount: 2,
+      electiveCompletedCount: 1
+    }
+  };
+}
 
 function buildGeneratedPlan(): MeetingPlan {
   return {
@@ -14,11 +57,12 @@ function buildGeneratedPlan(): MeetingPlan {
     denId: demoContent.denProfiles[0].id,
     denName: demoContent.denProfiles[0].name,
     rank: demoContent.rank,
-    adventure: demoContent.adventure,
+    adventures: [demoContent.adventures[0], demoContent.adventures[1]],
     request: {
       denId: demoContent.denProfiles[0].id,
       rankId: demoContent.rank.id,
-      adventureId: demoContent.adventure.id,
+      adventureIds: [demoContent.adventures[0].id, demoContent.adventures[1].id],
+      requirementIds: [demoContent.requirements[0].id, demoContent.requirements[3].id],
       durationMinutes: 60,
       scoutCount: 6,
       environment: "indoor",
@@ -34,6 +78,8 @@ function buildGeneratedPlan(): MeetingPlan {
         title: "Den Doodle Lion",
         durationMinutes: 15,
         description: "The den doodle is a craft project.",
+        adventureId: demoContent.adventures[0].id,
+        adventureName: demoContent.adventures[0].name,
         requirementIds: [demoContent.requirements[0].id],
         activityId: demoContent.activities[0].id,
         primaryRequirementId: demoContent.requirements[0].id,
@@ -46,6 +92,8 @@ function buildGeneratedPlan(): MeetingPlan {
     ],
     coverage: [
       {
+        adventureId: demoContent.adventures[0].id,
+        adventureName: demoContent.adventures[0].name,
         requirementId: demoContent.requirements[0].id,
         requirementNumber: 1,
         requirementText: demoContent.requirements[0].text,
@@ -61,8 +109,8 @@ function buildGeneratedPlan(): MeetingPlan {
     generatedAt: new Date().toISOString(),
     printSections: ["Opening and gathering", "Main activity flow"],
     parentUpdate: {
-      subject: `${demoContent.denProfiles[0].name}: ${demoContent.adventure.name} meeting update`,
-      message: "Tonight we will be working on Bobcat Lion."
+      subject: `${demoContent.denProfiles[0].name}: ${demoContent.adventures[0].name} + ${demoContent.adventures[1].name} meeting update`,
+      message: "Tonight we will be working on Bobcat Lion and Fun on the Run."
     }
   };
 }
@@ -70,6 +118,7 @@ function buildGeneratedPlan(): MeetingPlan {
 function buildYearPlan(savedPlans: SavedMeetingPlan[] = []): YearPlan {
   return {
     den: demoContent.denProfiles[0],
+    trailProgress: buildTrailData().progress,
     months: savedPlans.length
       ? [
           {
@@ -84,6 +133,10 @@ function buildYearPlan(savedPlans: SavedMeetingPlan[] = []): YearPlan {
 }
 
 describe("App", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     fetchMock.mockReset();
 
@@ -94,30 +147,28 @@ describe("App", () => {
       agenda: [
         {
           ...generatedPlan.agenda[0],
-          title: "The Compliment Game",
-          activityId: demoContent.activities[1].id,
-          selectedActivityId: demoContent.activities[1].id,
-          alternativeActivityIds: [
-            demoContent.activities[0].id,
-            demoContent.activities[2].id,
-            demoContent.activities[3].id
-          ],
+          title: "Animal Warmups",
+          adventureId: demoContent.adventures[1].id,
+          adventureName: demoContent.adventures[1].name,
+          activityId: demoContent.activities.find((activity) => activity.name === "Animal Warmups")!.id,
+          selectedActivityId: demoContent.activities.find((activity) => activity.name === "Animal Warmups")!.id,
           selectionSource: "swapped",
           coverageStatus: "leader-review",
-          description: "Everyone pays a compliment."
+          description: "Scouts move like animals while learning simple warm-up motions."
         }
       ],
       coverage: [
         {
+          adventureId: demoContent.adventures[0].id,
+          adventureName: demoContent.adventures[0].name,
           requirementId: demoContent.requirements[0].id,
           requirementNumber: 1,
           requirementText: demoContent.requirements[0].text,
-          activityId: demoContent.activities[1].id,
-          activityName: demoContent.activities[1].name,
+          activityId: demoContent.activities.find((activity) => activity.name === "Animal Warmups")!.id,
+          activityName: "Animal Warmups",
           covered: true,
           coverageStatus: "leader-review",
-          reason:
-            "Uses The Compliment Game. Review the requirement before marking it complete because this activity was suggested for a different part of the adventure."
+          reason: "Uses Animal Warmups. Review the requirement before marking it complete because this activity was suggested for a different requirement or adventure."
         }
       ],
       leaderNotes:
@@ -149,8 +200,17 @@ describe("App", () => {
       if (url.endsWith("/api/dens")) {
         return Promise.resolve(new Response(JSON.stringify(demoContent.denProfiles)));
       }
-      if (url.includes(`/api/dens/${demoContent.denProfiles[0].id}/adventures`)) {
-        return Promise.resolve(new Response(JSON.stringify([demoContent.adventure])));
+      if (url.includes(`/api/dens/${demoContent.denProfiles[0].id}/adventure-trail`)) {
+        return Promise.resolve(new Response(JSON.stringify(buildTrailData())));
+      }
+      if (url.includes(`/api/dens/${demoContent.denProfiles[0].id}/requirements`)) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const ids = params.get("adventureIds")?.split(",") ?? [];
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(demoContent.requirements.filter((requirement) => ids.includes(requirement.adventureId)))
+          )
+        );
       }
       if (url.includes(`/api/dens/${demoContent.denProfiles[0].id}/year-plan`)) {
         return Promise.resolve(new Response(JSON.stringify(buildYearPlan())));
@@ -168,8 +228,8 @@ describe("App", () => {
               id: generatedPlan.id,
               denId: generatedPlan.denId,
               rankId: generatedPlan.rank.id,
-              adventureId: generatedPlan.adventure.id,
-              title: `${generatedPlan.denName} - ${generatedPlan.adventure.name}`,
+              adventureId: generatedPlan.adventures[0].id,
+              title: `${generatedPlan.denName} - ${generatedPlan.adventures.map((adventure) => adventure.name).join(" + ")}`,
               plannedDate: generatedPlan.request.meetingDate,
               monthKey: "2026-09",
               monthLabel: "September 2026",
@@ -202,8 +262,8 @@ describe("App", () => {
               id: "saved-copy",
               denId: generatedPlan.denId,
               rankId: generatedPlan.rank.id,
-              adventureId: generatedPlan.adventure.id,
-              title: `${generatedPlan.denName} - ${generatedPlan.adventure.name}`,
+              adventureId: generatedPlan.adventures[0].id,
+              title: `${generatedPlan.denName} - ${generatedPlan.adventures.map((adventure) => adventure.name).join(" + ")}`,
               plannedDate: generatedPlan.request.meetingDate,
               monthKey: "2026-09",
               monthLabel: "September 2026",
@@ -219,44 +279,52 @@ describe("App", () => {
     });
   });
 
-  test("renders den planning inputs and can generate a leader packet", async () => {
+  test("renders the wizard and trail progress", async () => {
     render(<App />);
 
-    expect(await screen.findByText(/Plan for the den\. Print for the room\./i)).toBeInTheDocument();
-    expect(await screen.findByText("Generate Leader Packet")).toBeInTheDocument();
-    expect(await screen.findByText(demoContent.denProfiles[0].name)).toBeInTheDocument();
-    expect(await screen.findByText(/Dataset:/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Guide the setup\. Focus the packet\./i)).toBeInTheDocument();
+    expect(await screen.findByText("Step 1 · Den and Meeting Basics")).toBeInTheDocument();
+    expect(await screen.findByText("Adventure Trail Progress")).toBeInTheDocument();
   });
 
-  test("lets the leader preview options and swap an activity", async () => {
+  test("walks through the wizard, generates a packet, and swaps an activity", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByText("Generate Leader Packet"))[0]);
+    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
+    fireEvent.click(await screen.findByLabelText(/Fun on the Run/i));
+    fireEvent.click(await screen.findByText("Refine Requirements"));
+    fireEvent.click(await screen.findByText("Continue to Leader Packet"));
+    fireEvent.click(await screen.findByText("Generate Leader Packet"));
+
+    expect(await screen.findByText("Leader Packet")).toBeInTheDocument();
+    expect((await screen.findAllByText(/Bobcat Lion, Fun on the Run/i)).length).toBeGreaterThan(0);
+
     fireEvent.click(await screen.findByText("Preview and Swap Activity"));
     expect(await screen.findByText("Activity Options")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("The Compliment Game"));
+    fireEvent.click(screen.getByText("Animal Warmups"));
     expect(await screen.findByText(/requirement completion will move to leader review/i)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Use This Activity"));
 
     expect(await screen.findByText("Leader review")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/plans/swap",
-      expect.objectContaining({ method: "POST" })
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/plans/swap", expect.objectContaining({ method: "POST" }));
   });
 
   test("saves recap data and folds follow-up into the parent update", async () => {
     render(<App />);
 
-    fireEvent.click((await screen.findAllByText("Generate Leader Packet"))[0]);
-    fireEvent.click(await screen.findByLabelText(/Requirement 1 completed/i));
+    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
+    fireEvent.click(await screen.findByText("Refine Requirements"));
+    fireEvent.click(await screen.findByText("Continue to Leader Packet"));
+    fireEvent.click(await screen.findByText("Generate Leader Packet"));
+    fireEvent.click(await screen.findByLabelText(/Bobcat Lion requirement 1 completed/i));
     fireEvent.change(screen.getByLabelText("Family Follow-up"), { target: { value: "Wear class A next week." } });
     fireEvent.click(screen.getByText("Save Meeting Recap"));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      "/api/plans/recap",
-      expect.objectContaining({ method: "POST" })
-    ));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/plans/recap", expect.objectContaining({ method: "POST" }))
+    );
     expect(await screen.findByDisplayValue(/Family follow-up: Wear class A next week\./i)).toBeInTheDocument();
   });
 });
