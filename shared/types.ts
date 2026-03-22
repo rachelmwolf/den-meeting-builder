@@ -9,12 +9,42 @@ export type AgendaSectionKind =
   | "reflection"
   | "closing";
 
+export interface PackWorkspace {
+  id: string;
+  name: string;
+  planningNotes: string;
+}
+
+export type DatasetMode = "demo" | "imported" | "mixed";
+
+export interface ImportedRankStatus {
+  rankId: string;
+  rankName: string;
+  refreshedAt: string;
+}
+
+export interface ContentStatus {
+  datasetMode: DatasetMode;
+  importedRanks: ImportedRankStatus[];
+  lastRefreshedAt: string | null;
+}
+
 export interface Rank {
   id: string;
   name: string;
   grade: string;
   slug: string;
   sourceUrl: string;
+}
+
+export interface DenProfile {
+  id: string;
+  workspaceId: string;
+  rankId: string;
+  name: string;
+  leaderName: string;
+  meetingLocation: string;
+  typicalMeetingDay: string;
 }
 
 export interface Adventure {
@@ -52,12 +82,14 @@ export interface Activity {
 }
 
 export interface MeetingRequest {
+  denId: string;
   rankId: string;
   adventureId: string;
   durationMinutes: number;
   scoutCount: number;
   environment: Environment;
   notes: string;
+  meetingDate: string | null;
 }
 
 export interface CoverageItem {
@@ -87,8 +119,24 @@ export interface MeetingAgendaItem {
   editableNotes: string;
 }
 
+export interface ParentUpdateTemplate {
+  subject: string;
+  message: string;
+}
+
+export interface MeetingRecap {
+  meetingPlanId: string;
+  completedRequirementIds: string[];
+  recapNotes: string;
+  familyFollowUp: string;
+  reuseNotes: string;
+  recordedAt: string;
+}
+
 export interface MeetingPlan {
   id: string;
+  denId: string;
+  denName: string;
   rank: Rank;
   adventure: Adventure;
   request: MeetingRequest;
@@ -99,6 +147,51 @@ export interface MeetingPlan {
   activityLibrary: Activity[];
   leaderNotes: string;
   generatedAt: string;
+  printSections: string[];
+  parentUpdate: ParentUpdateTemplate;
+}
+
+export interface SaveMeetingPlanRequest {
+  denId: string;
+  title: string;
+  plannedDate: string | null;
+  monthKey: string;
+  monthLabel: string;
+  theme: string;
+  payload: MeetingPlan;
+}
+
+export interface SavedMeetingPlan {
+  id: string;
+  denId: string;
+  rankId: string;
+  adventureId: string;
+  title: string;
+  plannedDate: string | null;
+  monthKey: string;
+  monthLabel: string;
+  theme: string;
+  payload: MeetingPlan;
+  recap: MeetingRecap | null;
+  createdAt: string;
+}
+
+export interface YearPlanMonth {
+  monthKey: string;
+  monthLabel: string;
+  theme: string;
+  items: SavedMeetingPlan[];
+}
+
+export interface YearPlan {
+  den: DenProfile;
+  months: YearPlanMonth[];
+}
+
+export interface AdventureBundle {
+  adventure: Adventure;
+  requirements: Requirement[];
+  activities: Activity[];
 }
 
 export interface ActivitySwapRequest {
@@ -107,30 +200,10 @@ export interface ActivitySwapRequest {
   agendaItemId: string;
 }
 
-export interface SavedMeetingPlan {
-  id: string;
-  rankId: string;
-  adventureId: string;
-  title: string;
-  plannedDate: string | null;
-  payload: MeetingPlan;
-  createdAt: string;
-}
-
-export interface YearPlanOutlineItem {
-  savedPlanId: string;
-  title: string;
-  adventureName: string;
-  plannedDate: string | null;
-}
-
-export interface YearPlanOutline {
-  rank: Rank;
-  items: YearPlanOutlineItem[];
-}
-
-export interface AdventureBundle {
-  adventure: Adventure;
-  requirements: Requirement[];
-  activities: Activity[];
+export interface SaveRecapRequest {
+  meetingPlanId: string;
+  completedRequirementIds: string[];
+  recapNotes: string;
+  familyFollowUp: string;
+  reuseNotes: string;
 }
