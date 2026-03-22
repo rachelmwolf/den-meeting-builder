@@ -2,6 +2,14 @@ export type Environment = "indoor" | "outdoor" | "either";
 export type AdventureKind = "required" | "elective";
 export type CoverageStatus = "automatic" | "leader-review" | "uncovered";
 export type SelectionSource = "recommended" | "swapped";
+export type AdventureTrailBucketKey =
+  | "character-leadership"
+  | "outdoors"
+  | "personal-fitness"
+  | "citizenship"
+  | "personal-safety"
+  | "family-reverence"
+  | "electives";
 export type AgendaSectionKind =
   | "opening"
   | "activity"
@@ -58,6 +66,33 @@ export interface Adventure {
   snapshot: string;
 }
 
+export interface AdventureTrailBucket {
+  key: AdventureTrailBucketKey;
+  label: string;
+  required: boolean;
+  adventures: Adventure[];
+}
+
+export interface AdventureTrailProgressBucket {
+  key: AdventureTrailBucketKey;
+  label: string;
+  required: boolean;
+  targetCount: number;
+  completedCount: number;
+  completedAdventureIds: string[];
+}
+
+export interface AdventureTrailProgress {
+  buckets: AdventureTrailProgressBucket[];
+  electiveTargetCount: number;
+  electiveCompletedCount: number;
+}
+
+export interface AdventureTrailData {
+  buckets: AdventureTrailBucket[];
+  progress: AdventureTrailProgress;
+}
+
 export interface Requirement {
   id: string;
   adventureId: string;
@@ -84,7 +119,8 @@ export interface Activity {
 export interface MeetingRequest {
   denId: string;
   rankId: string;
-  adventureId: string;
+  adventureIds: string[];
+  requirementIds?: string[];
   durationMinutes: number;
   scoutCount: number;
   environment: Environment;
@@ -93,6 +129,8 @@ export interface MeetingRequest {
 }
 
 export interface CoverageItem {
+  adventureId: string;
+  adventureName: string;
   requirementId: string;
   requirementNumber: number;
   requirementText: string;
@@ -109,6 +147,8 @@ export interface MeetingAgendaItem {
   title: string;
   durationMinutes: number;
   description: string;
+  adventureId: string | null;
+  adventureName: string | null;
   requirementIds: string[];
   activityId: string | null;
   primaryRequirementId: string | null;
@@ -138,7 +178,7 @@ export interface MeetingPlan {
   denId: string;
   denName: string;
   rank: Rank;
-  adventure: Adventure;
+  adventures: Adventure[];
   request: MeetingRequest;
   prepNotes: string[];
   materials: string[];
@@ -185,6 +225,7 @@ export interface YearPlanMonth {
 
 export interface YearPlan {
   den: DenProfile;
+  trailProgress: AdventureTrailProgress;
   months: YearPlanMonth[];
 }
 
