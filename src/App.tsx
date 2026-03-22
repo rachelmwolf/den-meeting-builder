@@ -57,6 +57,8 @@ export function App() {
   const [dens, setDens] = useState<DenProfile[]>([]);
   const [selectedDenId, setSelectedDenId] = useState("");
   const [trailData, setTrailData] = useState<AdventureTrailData | null>(null);
+  const [trailError, setTrailError] = useState("");
+  const [trailLoading, setTrailLoading] = useState(false);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [selectedAdventureIds, setSelectedAdventureIds] = useState<string[]>([]);
   const [selectedRequirementIds, setSelectedRequirementIds] = useState<string[]>([]);
@@ -88,12 +90,28 @@ export function App() {
 
   useEffect(() => {
     if (!selectedDenId) {
+      setTrailData(null);
+      setTrailError("");
+      setTrailLoading(false);
       return;
     }
-    api.getAdventureTrail(selectedDenId).then((nextTrail) => {
-      setTrailData(nextTrail);
-      setSelectedAdventureIds((current) => current.filter((id) => nextTrail.buckets.some((bucket) => bucket.adventures.some((adventure) => adventure.id === id))));
-    });
+    setTrailLoading(true);
+    setTrailError("");
+    api.getAdventureTrail(selectedDenId)
+      .then((nextTrail) => {
+        setTrailData(nextTrail);
+        setSelectedAdventureIds((current) =>
+          current.filter((id) => nextTrail.buckets.some((bucket) => bucket.adventures.some((adventure) => adventure.id === id)))
+        );
+      })
+      .catch((error) => {
+        setTrailData(null);
+        setSelectedAdventureIds([]);
+        setTrailError(error instanceof Error ? error.message : "Unable to load the Adventure Trail right now.");
+      })
+      .finally(() => {
+        setTrailLoading(false);
+      });
     api.getYearPlan(selectedDenId).then(setYearPlan).catch(() => setYearPlan(null));
   }, [selectedDenId]);
 
@@ -457,7 +475,10 @@ export function App() {
               </div>
 
               <div className="trail-grid">
-                {trailData?.buckets.map((bucket) => {
+                {trailLoading ? <div className="empty-state">Loading Adventure Trail...</div> : null}
+                {!trailLoading && trailError ? <div className="empty-state">Adventure Trail could not be loaded: {trailError}</div> : null}
+                {!trailLoading && !trailError
+                  ? trailData?.buckets.map((bucket) => {
                   const progressBucket = trailProgress?.buckets.find((item) => item.key === bucket.key);
                   return (
                     <article key={bucket.key} className="trail-card">
@@ -493,7 +514,8 @@ export function App() {
                       </div>
                     </article>
                   );
-                })}
+                    })
+                  : null}
               </div>
 
               <div className="wizard-actions">
