@@ -1,11 +1,15 @@
 import type {
   ActivitySwapRequest,
   Adventure,
+  ContentStatus,
+  DenProfile,
   MeetingPlan,
-  MeetingRequest,
-  Rank,
+  MeetingRecap,
+  PackWorkspace,
+  SaveMeetingPlanRequest,
+  SaveRecapRequest,
   SavedMeetingPlan,
-  YearPlanOutline
+  YearPlan
 } from "../shared/types.js";
 
 async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -22,22 +26,28 @@ async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listRanks(): Promise<Rank[]> {
-    return readJson("/api/ranks");
+  getWorkspace(): Promise<PackWorkspace | null> {
+    return readJson("/api/workspace");
   },
-  listAdventures(rankId: string): Promise<Adventure[]> {
-    return readJson(`/api/ranks/${rankId}/adventures`);
+  getContentStatus(): Promise<ContentStatus> {
+    return readJson("/api/content-status");
   },
-  generatePlan(request: MeetingRequest): Promise<MeetingPlan> {
+  listDens(): Promise<DenProfile[]> {
+    return readJson("/api/dens");
+  },
+  listAdventures(denId: string): Promise<Adventure[]> {
+    return readJson(`/api/dens/${denId}/adventures`);
+  },
+  generatePlan(request: MeetingPlan["request"]): Promise<MeetingPlan> {
     return readJson("/api/plans/generate", {
       method: "POST",
       body: JSON.stringify(request)
     });
   },
-  savePlan(title: string, plannedDate: string | null, payload: MeetingPlan): Promise<SavedMeetingPlan> {
+  savePlan(request: SaveMeetingPlanRequest): Promise<SavedMeetingPlan> {
     return readJson("/api/plans/save", {
       method: "POST",
-      body: JSON.stringify({ title, plannedDate, payload })
+      body: JSON.stringify(request)
     });
   },
   swapActivity(request: ActivitySwapRequest): Promise<MeetingPlan> {
@@ -46,7 +56,19 @@ export const api = {
       body: JSON.stringify(request)
     });
   },
-  getYearPlan(rankId: string): Promise<YearPlanOutline> {
-    return readJson(`/api/ranks/${rankId}/year-plan`);
+  saveRecap(request: SaveRecapRequest): Promise<MeetingRecap> {
+    return readJson("/api/plans/recap", {
+      method: "POST",
+      body: JSON.stringify(request)
+    });
+  },
+  duplicatePlan(savedPlanId: string, monthKey: string, monthLabel: string, theme: string): Promise<SavedMeetingPlan> {
+    return readJson(`/api/plans/${savedPlanId}/duplicate`, {
+      method: "POST",
+      body: JSON.stringify({ monthKey, monthLabel, theme })
+    });
+  },
+  getYearPlan(denId: string): Promise<YearPlan> {
+    return readJson(`/api/dens/${denId}/year-plan`);
   }
 };
