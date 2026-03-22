@@ -35,3 +35,22 @@ npm run ingest:adventure -- lion bobcat-lion
 npm test
 npm run build
 ```
+
+## GitHub Sync
+
+Local development still uses normal git commits, but GitHub publishing in this workspace should use the connector path instead of `git push`.
+
+```bash
+git add .
+git commit -m "Meaningful checkpoint"
+npm run publish:connector
+```
+
+The publish script:
+
+- reads the current local `HEAD` commit message
+- publishes tracked changes from `origin/main..HEAD`
+- checks that GitHub `main` still matches the expected parent commit
+- stops instead of forcing an update if remote `main` has drifted
+
+This keeps GitHub current at meaningful checkpoints without relying on local git credentials. The connector currently publishes file-by-file updates on the remote side, so GitHub history may contain multiple connector commits for one local checkpoint.
