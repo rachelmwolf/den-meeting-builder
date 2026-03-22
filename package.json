@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "start": "node dist-server/server/index.js",
     "test": "vitest run",
+    "verify:checkpoint": "npm test && npm run build",
     "publish:connector": "bash scripts/publish-via-connector.sh",
     "ingest:all": "tsx ingest/cli.ts all",
     "ingest:rank": "tsx ingest/cli.ts rank",
