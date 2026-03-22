@@ -29,7 +29,7 @@ textarea {
 }
 
 .page-shell {
-  max-width: 1280px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 32px 20px 48px;
 }
@@ -53,11 +53,11 @@ textarea {
   font-size: clamp(2rem, 4vw, 3.5rem);
   line-height: 1.05;
   margin: 12px 0;
-  max-width: 12ch;
+  max-width: 14ch;
 }
 
 .hero-copy {
-  max-width: 60ch;
+  max-width: 64ch;
   margin: 0;
 }
 
@@ -66,11 +66,12 @@ textarea {
   opacity: 0.92;
 }
 
-.content-grid {
+.wizard-layout {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 20px;
   margin-top: 24px;
+  align-items: start;
 }
 
 .panel,
@@ -101,6 +102,66 @@ textarea {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
+}
+
+.sidebar-stack,
+.step-panel,
+.trail-grid,
+.trail-options,
+.trail-progress-list,
+.requirements-grid,
+.stepper,
+.wizard-actions,
+.wizard-inline-actions,
+.plan-stack,
+.agenda-list,
+.coverage-grid,
+.year-plan-list,
+.summary-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.sidebar-stack {
+  align-content: start;
+}
+
+.stepper {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 24px;
+}
+
+.step-pill {
+  border: 1px solid rgba(23, 33, 43, 0.12);
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.8);
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.step-pill span {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  background: rgba(31, 78, 70, 0.08);
+  font-weight: 700;
+}
+
+.step-pill-active {
+  border-color: rgba(31, 78, 70, 0.32);
+  background: rgba(224, 241, 235, 0.9);
+}
+
+.step-pill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 label {
@@ -157,13 +218,6 @@ label textarea {
   padding: 16px;
 }
 
-.summary-grid,
-.coverage-grid,
-.year-plan-list {
-  display: grid;
-  gap: 14px;
-}
-
 .summary-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -181,20 +235,58 @@ label textarea {
   color: #566772;
 }
 
+.trail-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.trail-card {
+  background: rgba(236, 241, 239, 0.75);
+  border-radius: 18px;
+  padding: 18px;
+  border: 1px solid rgba(23, 33, 43, 0.06);
+}
+
+.trail-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.trail-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.trail-option input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.trail-option-active {
+  outline: 2px solid rgba(31, 78, 70, 0.22);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.trail-option p,
+.subtle-line {
+  margin: 4px 0 0;
+  color: #5a676f;
+}
+
+.requirements-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
 .list-block {
   background: rgba(236, 241, 239, 0.75);
   border-radius: 18px;
   padding: 16px;
-}
-
-.plan-stack {
-  display: grid;
-  gap: 16px;
-}
-
-.agenda-list {
-  display: grid;
-  gap: 14px;
 }
 
 .agenda-card {
@@ -216,7 +308,7 @@ label textarea {
 }
 
 .year-plan-list {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .year-plan-card {
@@ -237,6 +329,10 @@ label textarea {
   padding: 28px;
   color: #55646b;
   background: rgba(255, 255, 255, 0.55);
+}
+
+.compact-empty {
+  padding: 16px;
 }
 
 .save-message {
@@ -318,8 +414,8 @@ label textarea {
 .preview-actions {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
   align-items: center;
+  gap: 16px;
 }
 
 .drawer-layout {
@@ -345,21 +441,13 @@ label textarea {
   cursor: pointer;
 }
 
+.option-card span {
+  color: #566772;
+}
+
 .option-card-active {
   border-color: #1f4e46;
   box-shadow: 0 10px 24px rgba(31, 78, 70, 0.12);
-}
-
-.option-warning,
-.current-pill {
-  display: inline-flex;
-  align-self: flex-start;
-  background: rgba(216, 110, 61, 0.16);
-  color: #934520;
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 0.78rem;
-  font-weight: 700;
 }
 
 .preview-panel {
@@ -390,6 +478,17 @@ label textarea {
   font-weight: 600;
 }
 
+.current-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  background: rgba(24, 111, 90, 0.12);
+  color: #19624d;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .close-button {
   border: 1px solid rgba(23, 33, 43, 0.12);
   border-radius: 999px;
@@ -398,17 +497,22 @@ label textarea {
   cursor: pointer;
 }
 
-@media (max-width: 960px) {
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
+.wizard-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
 
+.wizard-inline-actions {
+  grid-template-columns: repeat(2, max-content);
+}
+
+@media (max-width: 1024px) {
+  .wizard-layout,
+  .drawer-layout,
+  .inline-grid,
   .summary-grid,
-  .coverage-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .drawer-layout {
+  .wizard-actions,
+  .stepper {
     grid-template-columns: 1fr;
   }
 }
