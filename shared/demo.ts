@@ -1,4 +1,4 @@
-import type { Activity, Adventure, Rank, Requirement } from "./types.js";
+import type { Activity, Adventure, DenProfile, PackWorkspace, Rank, Requirement } from "./types.js";
 import { makeId, slugify } from "./utils.js";
 
 const rank: Rank = {
@@ -8,6 +8,24 @@ const rank: Rank = {
   slug: "lion",
   sourceUrl: "https://www.scouting.org/programs/cub-scouts/adventures/lion/"
 };
+
+const workspace: PackWorkspace = {
+  id: "pack-1",
+  name: "Pack 110 Planning Workspace",
+  planningNotes: "Internal planning space for den leaders and pack adults."
+};
+
+const denProfiles: DenProfile[] = [
+  {
+    id: "lion-den-1",
+    workspaceId: workspace.id,
+    rankId: rank.id,
+    name: "Lion Den A",
+    leaderName: "Den Leader",
+    meetingLocation: "Pack meeting room",
+    typicalMeetingDay: "Thursday"
+  }
+];
 
 const adventure: Adventure = {
   id: makeId(rank.id, "bobcat-lion"),
@@ -110,6 +128,8 @@ const activities: Activity[] = [
 ];
 
 export const demoContent = {
+  workspace,
+  denProfiles,
   rank,
   adventure,
   requirements,
