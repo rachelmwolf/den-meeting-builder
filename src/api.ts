@@ -1,9 +1,11 @@
 import type {
   ActivitySwapRequest,
   Adventure,
+  AdventureTrailData,
   ContentStatus,
   DenProfile,
   MeetingPlan,
+  Requirement,
   MeetingRecap,
   PackWorkspace,
   SaveMeetingPlanRequest,
@@ -37,6 +39,12 @@ export const api = {
   },
   listAdventures(denId: string): Promise<Adventure[]> {
     return readJson(`/api/dens/${denId}/adventures`);
+  },
+  getAdventureTrail(denId: string): Promise<AdventureTrailData> {
+    return readJson(`/api/dens/${denId}/adventure-trail`);
+  },
+  listRequirements(denId: string, adventureIds: string[]): Promise<Requirement[]> {
+    return readJson(`/api/dens/${denId}/requirements?adventureIds=${encodeURIComponent(adventureIds.join(","))}`);
   },
   generatePlan(request: MeetingPlan["request"]): Promise<MeetingPlan> {
     return readJson("/api/plans/generate", {
