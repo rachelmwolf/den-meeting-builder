@@ -14,6 +14,8 @@ import type {
 import { chunkedDuration, makeId } from "../shared/utils.js";
 
 type RequirementSelection = {
+  adventureId: string;
+  adventureName: string;
   requirement: Requirement;
   activity: Activity | null;
   selectionSource: SelectionSource | null;
@@ -43,32 +45,39 @@ function inferCoverageStatus(requirement: Requirement, activity: Activity | null
 }
 
 function buildSelections(
-  requirements: Requirement[],
-  activities: Activity[],
+  bundles: AdventureBundle[],
   request: MeetingRequest,
   overrides: Map<string, string> = new Map()
 ): RequirementSelection[] {
-  return requirements.map((requirement) => {
-    const overrideActivityId = overrides.get(requirement.id);
-    const activity = overrideActivityId
-      ? activities.find((candidate) => candidate.id === overrideActivityId) ?? null
-      : chooseRecommendedActivity(requirement, activities, request.environment);
-    const selectionSource: SelectionSource | null = activity
-      ? overrideActivityId
-        ? "swapped"
-        : "recommended"
-      : null;
-    return {
-      requirement,
-      activity,
-      selectionSource,
-      coverageStatus: inferCoverageStatus(requirement, activity)
-    };
-  });
+  const selectedRequirementIds = new Set(request.requirementIds?.filter(Boolean) ?? []);
+
+  return bundles.flatMap((bundle) =>
+    bundle.requirements
+      .filter((requirement) => selectedRequirementIds.size === 0 || selectedRequirementIds.has(requirement.id))
+      .map((requirement) => {
+        const overrideActivityId = overrides.get(requirement.id);
+        const activity = overrideActivityId
+          ? bundles
+              .flatMap((candidateBundle) => candidateBundle.activities)
+              .find((candidate) => candidate.id === overrideActivityId) ?? null
+          : chooseRecommendedActivity(requirement, bundle.activities, request.environment);
+
+        return {
+          adventureId: bundle.adventure.id,
+          adventureName: bundle.adventure.name,
+          requirement,
+          activity,
+          selectionSource: activity ? (overrideActivityId ? "swapped" : "recommended") : null,
+          coverageStatus: inferCoverageStatus(requirement, activity)
+        };
+      })
+  );
 }
 
 function buildCoverage(selections: RequirementSelection[]): CoverageItem[] {
-  return selections.map(({ requirement, activity, coverageStatus }) => ({
+  return selections.map(({ adventureId, adventureName, requirement, activity, coverageStatus }) => ({
+    adventureId,
+    adventureName,
     requirementId: requirement.id,
     requirementNumber: requirement.requirementNumber,
     requirementText: requirement.text,
@@ -80,7 +89,7 @@ function buildCoverage(selections: RequirementSelection[]): CoverageItem[] {
       coverageStatus === "automatic"
         ? `Covered with ${activity?.name}.`
         : coverageStatus === "leader-review"
-          ? `Uses ${activity?.name}. Review the requirement before marking it complete because this activity was suggested for a different part of the adventure.`
+          ? `Uses ${activity?.name}. Review the requirement before marking it complete because this activity was suggested for a different requirement or adventure.`
           : "No official linked activity was found. Leader review is needed before claiming completion."
   }));
 }
@@ -94,61 +103,64 @@ function buildMaterials(activities: Activity[]): string[] {
     if (/game|circle|share|discussion/i.test(activity.name + activity.summary + activity.previewDetails)) {
       materials.add("Open floor or circle seating");
     }
+    if (/outside|walk|outdoor|trail|relay/i.test(activity.name + activity.summary + activity.previewDetails)) {
+      materials.add("Outdoor movement space or weather-appropriate alternate");
+    }
   }
   materials.add("Printed requirement checklist");
   return Array.from(materials);
 }
 
 function buildActivityAgendaItems(
-  adventureId: string,
   selections: RequirementSelection[],
   allActivities: Activity[],
   request: MeetingRequest,
   activityDurations: number[]
 ): MeetingAgendaItem[] {
   const agendaItems: MeetingAgendaItem[] = [];
-  selections
-    .filter((selection) => selection.activity)
-    .forEach((selection, index, filteredSelections) => {
-      const activity = selection.activity!;
-      agendaItems.push({
-        id: makeId(adventureId, selection.requirement.id, "activity"),
-        kind: "activity",
-        title: activity.name,
-        durationMinutes: activityDurations[index] ?? 10,
-        description: activity.summary,
-        requirementIds: [selection.requirement.id],
-        activityId: activity.id,
-        primaryRequirementId: selection.requirement.id,
-        selectedActivityId: activity.id,
-        alternativeActivityIds: allActivities
-          .filter((candidate) => candidate.id !== activity.id)
-          .map((candidate) => candidate.id),
-        selectionSource: selection.selectionSource,
-        coverageStatus: selection.coverageStatus,
-        editableNotes:
-          activity.notes ||
-          `Use the official activity card for ${activity.name} and adjust delivery for ${request.scoutCount} scouts.`
-      });
-
-      if (index < filteredSelections.length - 1) {
-        agendaItems.push({
-          id: makeId(adventureId, activity.id, "transition"),
-          kind: "transition",
-          title: "Transition",
-          durationMinutes: 5,
-          description: "Reset the room, move supplies, and connect the last activity to the next requirement.",
-          requirementIds: [],
-          activityId: null,
-          primaryRequirementId: null,
-          selectedActivityId: null,
-          alternativeActivityIds: [],
-          selectionSource: null,
-          coverageStatus: null,
-          editableNotes: "Use a quick movement break or call-and-response to keep scouts focused."
-        });
-      }
+  const filteredSelections = selections.filter((selection) => selection.activity);
+  filteredSelections.forEach((selection, index) => {
+    const activity = selection.activity!;
+    agendaItems.push({
+      id: makeId(selection.adventureId, selection.requirement.id, "activity"),
+      kind: "activity",
+      title: activity.name,
+      durationMinutes: activityDurations[index] ?? 10,
+      description: activity.summary,
+      adventureId: selection.adventureId,
+      adventureName: selection.adventureName,
+      requirementIds: [selection.requirement.id],
+      activityId: activity.id,
+      primaryRequirementId: selection.requirement.id,
+      selectedActivityId: activity.id,
+      alternativeActivityIds: allActivities.filter((candidate) => candidate.id !== activity.id).map((candidate) => candidate.id),
+      selectionSource: selection.selectionSource,
+      coverageStatus: selection.coverageStatus,
+      editableNotes:
+        activity.notes ||
+        `Use the official activity card for ${activity.name} and adjust delivery for ${request.scoutCount} scouts.`
     });
+
+    if (index < filteredSelections.length - 1) {
+      agendaItems.push({
+        id: makeId(selection.adventureId, activity.id, "transition"),
+        kind: "transition",
+        title: "Transition",
+        durationMinutes: 5,
+        description: "Reset the room, move supplies, and connect the last activity to the next requirement.",
+        adventureId: null,
+        adventureName: null,
+        requirementIds: [],
+        activityId: null,
+        primaryRequirementId: null,
+        selectedActivityId: null,
+        alternativeActivityIds: [],
+        selectionSource: null,
+        coverageStatus: null,
+        editableNotes: "Use a quick movement break or call-and-response to keep scouts focused."
+      });
+    }
+  });
   return agendaItems;
 }
 
@@ -159,21 +171,21 @@ function buildLeaderNotes(coverage: CoverageItem[]): string {
   if (coverage.some((item) => item.coverageStatus === "uncovered")) {
     return "Do not mark uncovered requirements complete until you review the official requirement text and choose a supporting activity.";
   }
-  return "This plan covers each requirement with an official linked activity. Confirm completion based on actual meeting delivery.";
+  return "This plan covers each selected requirement with an official linked activity. Confirm completion based on actual meeting delivery.";
 }
 
 function buildPlan(
   den: DenProfile,
   rank: Rank,
-  bundle: AdventureBundle,
+  bundles: AdventureBundle[],
   request: MeetingRequest,
   overrides: Map<string, string> = new Map()
 ): MeetingPlan {
-  const selections = buildSelections(bundle.requirements, bundle.activities, request, overrides);
+  const selectedBundles = bundles.filter((bundle) => request.adventureIds.includes(bundle.adventure.id));
+  const allActivities = selectedBundles.flatMap((bundle) => bundle.activities);
+  const selections = buildSelections(selectedBundles, request, overrides);
   const coverage = buildCoverage(selections);
-  const chosenActivities = selections
-    .map((selection) => selection.activity)
-    .filter((activity): activity is Activity => Boolean(activity));
+  const chosenActivities = selections.map((selection) => selection.activity).filter((activity): activity is Activity => Boolean(activity));
 
   const introMinutes = 10;
   const transitionCount = Math.max(chosenActivities.length - 1, 0);
@@ -182,13 +194,16 @@ function buildPlan(
   const mainMinutes = Math.max(request.durationMinutes - introMinutes - transitionMinutes - closingMinutes, 15);
   const activityDurations = chunkedDuration(mainMinutes, Math.max(chosenActivities.length, 1), 10);
 
+  const adventureNames = selectedBundles.map((bundle) => bundle.adventure.name);
   const agenda: MeetingAgendaItem[] = [
     {
-      id: makeId(bundle.adventure.id, "opening"),
+      id: makeId(rank.id, "opening"),
       kind: "opening",
       title: "Opening Gathering",
       durationMinutes: 10,
-      description: "Gather the den, review the adventure goal, and set expectations for behavior and participation.",
+      description: "Gather the den, review the meeting goal, and set expectations for behavior and participation.",
+      adventureId: null,
+      adventureName: null,
       requirementIds: [],
       activityId: null,
       primaryRequirementId: null,
@@ -196,19 +211,21 @@ function buildPlan(
       alternativeActivityIds: [],
       selectionSource: null,
       coverageStatus: null,
-      editableNotes: "Welcome scouts, collect any needed forms, and preview tonight's adventure."
+      editableNotes: `Welcome scouts and preview tonight's focus: ${adventureNames.join(", ")}.`
     },
-    ...buildActivityAgendaItems(bundle.adventure.id, selections, bundle.activities, request, activityDurations)
+    ...buildActivityAgendaItems(selections, allActivities, request, activityDurations)
   ];
 
   const uncovered = coverage.filter((item) => item.coverageStatus === "uncovered");
   if (uncovered.length > 0) {
     agenda.push({
-      id: makeId(bundle.adventure.id, "reflection"),
+      id: makeId(rank.id, "reflection"),
       kind: "reflection",
       title: "Leader Review Checkpoint",
       durationMinutes: 5,
-      description: "Review any uncovered requirements before marking the adventure complete.",
+      description: "Review any uncovered requirements before marking the selected adventures complete.",
+      adventureId: null,
+      adventureName: null,
       requirementIds: uncovered.map((item) => item.requirementId),
       activityId: null,
       primaryRequirementId: null,
@@ -216,16 +233,20 @@ function buildPlan(
       alternativeActivityIds: [],
       selectionSource: null,
       coverageStatus: null,
-      editableNotes: uncovered.map((item) => `Requirement ${item.requirementNumber}: ${item.requirementText}`).join(" ")
+      editableNotes: uncovered
+        .map((item) => `${item.adventureName} · Requirement ${item.requirementNumber}: ${item.requirementText}`)
+        .join(" ")
     });
   }
 
   agenda.push({
-    id: makeId(bundle.adventure.id, "closing"),
+    id: makeId(rank.id, "closing"),
     kind: "closing",
     title: "Closing Reflection",
     durationMinutes: 10,
     description: "Reflect on what scouts practiced, celebrate progress, and preview the next meeting.",
+    adventureId: null,
+    adventureName: null,
     requirementIds: [],
     activityId: null,
     primaryRequirementId: null,
@@ -237,27 +258,28 @@ function buildPlan(
   });
 
   const prepNotes = [
-    `Review the official ${bundle.adventure.name} adventure page before the meeting.`,
+    `Review the official adventure pages for ${adventureNames.join(", ")} before the meeting.`,
     `Confirm space and setup for a ${request.environment} meeting.`,
     `Prepare materials for ${chosenActivities.length || 1} main activity block(s).`
   ];
-
   if (request.notes.trim()) {
     prepNotes.push(`Leader constraint: ${request.notes.trim()}`);
   }
 
+  const materials = buildMaterials(chosenActivities);
+
   return {
-    id: makeId(bundle.adventure.id, new Date().toISOString()),
+    id: makeId(rank.id, new Date().toISOString()),
     denId: den.id,
     denName: den.name,
     rank,
-    adventure: bundle.adventure,
+    adventures: selectedBundles.map((bundle) => bundle.adventure),
     request,
     prepNotes,
-    materials: buildMaterials(chosenActivities),
+    materials,
     agenda,
     coverage,
-    activityLibrary: bundle.activities,
+    activityLibrary: allActivities,
     leaderNotes: buildLeaderNotes(coverage),
     printSections: [
       "Opening and gathering",
@@ -267,14 +289,12 @@ function buildPlan(
       "Leader notes and reminders"
     ],
     parentUpdate: {
-      subject: `${den.name}: ${bundle.adventure.name} meeting update`,
+      subject: `${den.name}: ${adventureNames.join(" + ")} meeting update`,
       message: [
-        `Tonight we will be working on ${bundle.adventure.name}.`,
+        `Tonight we will be working on ${adventureNames.join(" and ")}.`,
         `This meeting is planned for ${request.environment}. Please dress accordingly.`,
-        `We will focus on ${coverage
-          .map((item) => `requirement ${item.requirementNumber}`)
-          .join(", ")}.`,
-        `Materials to have ready: ${buildMaterials(chosenActivities).join(", ")}.`,
+        `We will focus on ${coverage.map((item) => `${item.adventureName} requirement ${item.requirementNumber}`).join(", ")}.`,
+        `Materials to have ready: ${materials.join(", ")}.`,
         request.notes.trim() ? `Leader note for families: ${request.notes.trim()}` : "We'll share any follow-up after the meeting."
       ].join(" ")
     },
@@ -282,14 +302,19 @@ function buildPlan(
   };
 }
 
-export function buildMeetingPlan(den: DenProfile, rank: Rank, bundle: AdventureBundle, request: MeetingRequest): MeetingPlan {
-  return buildPlan(den, rank, bundle, request);
+export function buildMeetingPlan(
+  den: DenProfile,
+  rank: Rank,
+  bundles: AdventureBundle[],
+  request: MeetingRequest
+): MeetingPlan {
+  return buildPlan(den, rank, bundles, request);
 }
 
 export function swapMeetingActivity(
   den: DenProfile,
   rank: Rank,
-  bundle: AdventureBundle,
+  bundles: AdventureBundle[],
   plan: MeetingPlan,
   agendaItemId: string,
   selectedActivityId: string
@@ -310,5 +335,5 @@ export function swapMeetingActivity(
   }
 
   overrides.set(agendaItem.primaryRequirementId, selectedActivityId);
-  return buildPlan(den, rank, bundle, plan.request, overrides);
+  return buildPlan(den, rank, bundles, plan.request, overrides);
 }
