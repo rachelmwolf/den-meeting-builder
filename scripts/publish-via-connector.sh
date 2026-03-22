@@ -21,6 +21,15 @@ repo="${owner_repo##*/}"
 expected_parent="$(git rev-parse "${remote_name}/${branch}")"
 local_head="$(git rev-parse HEAD)"
 
+read_git_file() {
+  local ref="$1"
+  local path="$2"
+  local sentinel="__CODEX_EOF__"
+  local data
+  data="$(git show "${ref}:${path}"; printf '%s' "$sentinel")"
+  printf '%s' "${data%$sentinel}"
+}
+
 if [[ -n "$(git status --short)" ]]; then
   echo "working tree is not clean; commit or stash changes before publishing" >&2
   exit 1
@@ -65,7 +74,7 @@ while IFS= read -r entry; do
     A|M)
       if git cat-file -e "${expected_parent}:${path}" 2>/dev/null; then
         sha="$(git rev-parse "${expected_parent}:${path}")"
-        content="$(git show "${local_head}:${path}")"
+        content="$(read_git_file "${local_head}" "${path}")"
         docker mcp tools call create_or_update_file \
           "owner=${owner}" \
           "repo=${repo}" \
@@ -75,7 +84,7 @@ while IFS= read -r entry; do
           "sha=${sha}" \
           "content=${content}" >/dev/null
       else
-        content="$(git show "${local_head}:${path}")"
+        content="$(read_git_file "${local_head}" "${path}")"
         docker mcp tools call create_or_update_file \
           "owner=${owner}" \
           "repo=${repo}" \
