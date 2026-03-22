@@ -49,8 +49,8 @@ npm run publish:connector
 The publish script:
 
 - reads the current local `HEAD` commit message
-- publishes tracked changes from `origin/main..HEAD`
+- publishes tracked changes from the last published local commit to `HEAD`
 - checks that GitHub `main` still matches the expected parent commit
 - stops instead of forcing an update if remote `main` has drifted
 
-This keeps GitHub current at meaningful checkpoints without relying on local git credentials. The connector currently publishes file-by-file updates on the remote side, so GitHub history may contain multiple connector commits for one local checkpoint.
+This keeps GitHub current at meaningful checkpoints without relying on local git credentials. The connector currently publishes file-by-file updates on the remote side, so GitHub history may contain multiple connector commits for one local checkpoint. The script stores the last published local and remote commit IDs in local git refs so later publishes only send new local work.
