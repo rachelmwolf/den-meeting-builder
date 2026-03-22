@@ -66,7 +66,7 @@ export function parseRankPage(html: string, rank: Rank): Adventure[] {
     const classTokens = (card.attr("class") ?? "").split(/\s+/);
     const topicToken = classTokens.find((token) => token.startsWith("cs-adv-topic-"));
     const category =
-      card.find("span").map((_i, span) => normalizeText($(span).text())).get().find(Boolean) ??
+      card.find("span").map((_i, span) => normalizeAdventureCategory($(span).text())).get().find(Boolean) ??
       topicToken?.replace("cs-adv-topic-", "").replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) ??
       "Adventure";
     const kind = classTokens.includes("cs-adv-type-elective") ? "elective" : "required";
@@ -83,10 +83,6 @@ export function parseRankPage(html: string, rank: Rank): Adventure[] {
     });
   });
 
-  if (adventures.length > 0) {
-    return adventures;
-  }
-
   $("a").each((_index, element) => {
     const href = $(element).attr("href");
     const text = normalizeText($(element).text());
@@ -99,7 +95,7 @@ export function parseRankPage(html: string, rank: Rank): Adventure[] {
     }
     seen.add(name.toLowerCase());
     const card = $(element).closest("article, div, section");
-    const category = normalizeText(card.find("p, span").first().text()) || "Adventure";
+    const category = normalizeAdventureCategory(card.find("p, span").first().text()) || "Adventure";
     const kind = /elective/i.test(card.text()) ? "elective" : "required";
     adventures.push({
       id: makeId(rank.id, name),
@@ -122,6 +118,17 @@ function parseDifficulty(text: string): number | null {
 
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function normalizeAdventureCategory(text: string): string {
+  const normalized = normalizeText(text).replace(/^View /i, "").trim();
+  if (!normalized || /^view$/i.test(normalized)) {
+    return "Adventure";
+  }
+  if (/bobcat/i.test(normalized)) {
+    return "Character & Leadership";
+  }
+  return normalized;
 }
 
 function isLikelyContentText(text: string): boolean {
@@ -176,6 +183,43 @@ function extractCardTexts(article: cheerio.Cheerio<any>, $: cheerio.CheerioAPI):
     .filter(Boolean);
 }
 
+function firstMeaningfulText(values: string[]): string {
+  return values.find((value) => value.length > 0) ?? "";
+}
+
+function extractRequirementText($: cheerio.CheerioAPI, heading: any): string {
+  const directText = normalizeText($(heading).nextAll("p, ul, ol").first().text());
+  if (directText) {
+    return directText;
+  }
+
+  const widgetText = firstMeaningfulText(
+    $(heading)
+      .closest(".elementor-widget")
+      .nextAll(".elementor-widget")
+      .slice(0, 2)
+      .find("p, li")
+      .map((_index, element) => normalizeText($(element).text()))
+      .get()
+  );
+  if (widgetText) {
+    return widgetText;
+  }
+
+  const columnText = firstMeaningfulText(
+    $(heading)
+      .closest(".elementor-column")
+      .find("p, li")
+      .map((_index, element) => normalizeText($(element).text()))
+      .get()
+  );
+  if (columnText) {
+    return columnText;
+  }
+
+  return "";
+}
+
 export function parseAdventurePage(html: string, adventure: Adventure): AdventureBundle {
   const $ = cheerio.load(html);
   const snapshot =
@@ -190,7 +234,7 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
     if (!match) {
       return;
     }
-    const text = $(element).nextAll("p").first().text().replace(/\s+/g, " ").trim();
+    const text = extractRequirementText($, element);
     requirements.push({
       id: makeId(adventure.id, `requirement-${match[1]}`),
       adventureId: adventure.id,
