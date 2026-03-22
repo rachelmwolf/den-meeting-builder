@@ -61,6 +61,11 @@ textarea {
   margin: 0;
 }
 
+.content-status-copy {
+  margin-top: 14px;
+  opacity: 0.92;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: 360px 1fr;
@@ -218,6 +223,14 @@ label textarea {
   padding: 16px;
 }
 
+.year-plan-item {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(23, 33, 43, 0.08);
+}
+
 .empty-state {
   border: 1px dashed rgba(31, 78, 70, 0.28);
   border-radius: 18px;
@@ -233,6 +246,29 @@ label textarea {
 
 .agenda-actions {
   margin-top: 12px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+}
+
+.checkbox-row input {
+  width: auto;
+  margin: 0;
+}
+
+.text-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #0f5d5c;
+  padding: 0;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
 }
 
 .coverage-chip {
