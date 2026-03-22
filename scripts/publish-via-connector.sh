@@ -18,8 +18,9 @@ remote_url="$(git remote get-url "$remote_name")"
 owner_repo="$(printf '%s\n' "$remote_url" | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
 owner="${owner_repo%%/*}"
 repo="${owner_repo##*/}"
-expected_parent="$(git rev-parse "${remote_name}/${branch}")"
 local_head="$(git rev-parse HEAD)"
+state_local_ref="refs/codex/connector-last-published-local"
+state_remote_ref="refs/codex/connector-last-published-remote"
 
 read_git_file() {
   local ref="$1"
@@ -35,8 +36,20 @@ if [[ -n "$(git status --short)" ]]; then
   exit 1
 fi
 
-if [[ "$local_head" == "$expected_parent" ]]; then
-  echo "local HEAD already matches ${remote_name}/${branch}; nothing to publish"
+if git rev-parse --verify "$state_local_ref" >/dev/null 2>&1; then
+  publish_base="$(git rev-parse "$state_local_ref")"
+else
+  publish_base="$(git rev-parse "${remote_name}/${branch}")"
+fi
+
+if git rev-parse --verify "$state_remote_ref" >/dev/null 2>&1; then
+  expected_remote_head="$(git rev-parse "$state_remote_ref")"
+else
+  expected_remote_head="$(git rev-parse "${remote_name}/${branch}")"
+fi
+
+if [[ "$local_head" == "$publish_base" ]]; then
+  echo "local HEAD already matches the last published local commit; nothing to publish"
   exit 0
 fi
 
@@ -46,15 +59,15 @@ remote_head="$(
     | python3 -c 'import json, re, sys; text = sys.stdin.read(); match = re.search(r"(\[\{.*\}\])", text, re.S); data = json.loads(match.group(1)); print(data[0]["sha"])'
 )"
 
-if [[ "$remote_head" != "$expected_parent" ]]; then
+if [[ "$remote_head" != "$expected_remote_head" ]]; then
   echo "remote ${branch} has moved unexpectedly" >&2
-  echo "expected: $expected_parent" >&2
+  echo "expected: $expected_remote_head" >&2
   echo "actual:   $remote_head" >&2
   echo "publish aborted to avoid overwriting outside work" >&2
   exit 1
 fi
 
-changed_entries="$(git diff --name-status "${expected_parent}..${local_head}")"
+changed_entries="$(git diff --name-status "${publish_base}..${local_head}")"
 
 if [[ -z "$changed_entries" ]]; then
   echo "no tracked file changes found between ${expected_parent} and ${local_head}"
@@ -72,8 +85,8 @@ while IFS= read -r entry; do
 
   case "$status" in
     A|M)
-      if git cat-file -e "${expected_parent}:${path}" 2>/dev/null; then
-        sha="$(git rev-parse "${expected_parent}:${path}")"
+      if git cat-file -e "${remote_name}/${branch}:${path}" 2>/dev/null; then
+        sha="$(git rev-parse "${remote_name}/${branch}:${path}")"
         content="$(read_git_file "${local_head}" "${path}")"
         docker mcp tools call create_or_update_file \
           "owner=${owner}" \
@@ -95,7 +108,7 @@ while IFS= read -r entry; do
       fi
       ;;
     D)
-      sha="$(git rev-parse "${expected_parent}:${path}")"
+      sha="$(git rev-parse "${remote_name}/${branch}:${path}")"
       docker mcp tools call delete_file \
         "owner=${owner}" \
         "repo=${repo}" \
@@ -114,5 +127,9 @@ while IFS= read -r entry; do
 done <<EOF
 $changed_entries
 EOF
+
+git fetch "$remote_name" "$branch" >/dev/null
+git update-ref "$state_local_ref" "$local_head"
+git update-ref "$state_remote_ref" "$(git rev-parse "${remote_name}/${branch}")"
 
 echo "connector publish complete for ${owner_repo}@${branch}"
