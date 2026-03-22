@@ -1,7 +1,7 @@
 import { rankOverrides, rankIndexUrl } from "./constants.js";
 import { fetchHtml } from "./fetch.js";
 import { parseActivityDetailPage, parseAdventurePage, parseRankIndex, parseRankPage } from "./parse.js";
-import { initDb, saveBundle, upsertRank } from "../server/db.js";
+import { ensureDefaultDenProfileForRank, initDb, saveBundle, saveSourceSnapshot, upsertRank } from "../server/db.js";
 import type { Rank } from "../shared/types.js";
 
 function makeRank(record: { name: string; grade: string; slug: string; sourceUrl: string }): Rank {
@@ -16,14 +16,17 @@ function makeRank(record: { name: string; grade: string; slug: string; sourceUrl
 
 async function ingestAdventure(rank: Rank, adventureUrl: string): Promise<void> {
   const rankHtml = await fetchHtml(rank.sourceUrl);
+  saveSourceSnapshot("rank", rank.id, rank.sourceUrl, rankHtml);
   const adventures = parseRankPage(rankHtml, rank);
   const adventure = adventures.find((entry) => entry.sourceUrl === adventureUrl || entry.slug === adventureUrl);
   if (!adventure) {
     throw new Error(`Adventure ${adventureUrl} not found under ${rank.name}`);
   }
   const adventureHtml = await fetchHtml(adventure.sourceUrl);
+  saveSourceSnapshot("adventure", adventure.id, adventure.sourceUrl, adventureHtml);
   const bundle = await enrichActivities(parseAdventurePage(adventureHtml, adventure));
   saveBundle(bundle, rank);
+  ensureDefaultDenProfileForRank(rank);
   console.log(`Saved ${rank.name} / ${adventure.name}`);
 }
 
@@ -32,6 +35,7 @@ async function enrichActivities(bundle: ReturnType<typeof parseAdventurePage>): 
     bundle.activities.map(async (activity) => {
       try {
         const html = await fetchHtml(activity.sourceUrl);
+        saveSourceSnapshot("activity", activity.id, activity.sourceUrl, html);
         return parseActivityDetailPage(html, activity);
       } catch {
         return activity;
@@ -49,13 +53,16 @@ async function ingestRank(rankSlug: string): Promise<void> {
   const rank = makeRank(rankRecord);
   upsertRank(rank);
   const rankHtml = await fetchHtml(rank.sourceUrl);
+  saveSourceSnapshot("rank", rank.id, rank.sourceUrl, rankHtml);
   const adventures = parseRankPage(rankHtml, rank);
   for (const adventure of adventures) {
     const adventureHtml = await fetchHtml(adventure.sourceUrl);
+    saveSourceSnapshot("adventure", adventure.id, adventure.sourceUrl, adventureHtml);
     const bundle = await enrichActivities(parseAdventurePage(adventureHtml, adventure));
     saveBundle(bundle, rank);
     console.log(`Saved ${rank.name} / ${adventure.name}`);
   }
+  ensureDefaultDenProfileForRank(rank);
 }
 
 async function ingestAll(): Promise<void> {
