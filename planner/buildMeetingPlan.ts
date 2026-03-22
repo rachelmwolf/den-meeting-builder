@@ -3,6 +3,7 @@ import type {
   AdventureBundle,
   CoverageItem,
   CoverageStatus,
+  DenProfile,
   MeetingAgendaItem,
   MeetingPlan,
   MeetingRequest,
@@ -162,6 +163,7 @@ function buildLeaderNotes(coverage: CoverageItem[]): string {
 }
 
 function buildPlan(
+  den: DenProfile,
   rank: Rank,
   bundle: AdventureBundle,
   request: MeetingRequest,
@@ -246,6 +248,8 @@ function buildPlan(
 
   return {
     id: makeId(bundle.adventure.id, new Date().toISOString()),
+    denId: den.id,
+    denName: den.name,
     rank,
     adventure: bundle.adventure,
     request,
@@ -255,15 +259,35 @@ function buildPlan(
     coverage,
     activityLibrary: bundle.activities,
     leaderNotes: buildLeaderNotes(coverage),
+    printSections: [
+      "Opening and gathering",
+      "Main activity flow",
+      "Materials and prep",
+      "Requirement coverage",
+      "Leader notes and reminders"
+    ],
+    parentUpdate: {
+      subject: `${den.name}: ${bundle.adventure.name} meeting update`,
+      message: [
+        `Tonight we will be working on ${bundle.adventure.name}.`,
+        `This meeting is planned for ${request.environment}. Please dress accordingly.`,
+        `We will focus on ${coverage
+          .map((item) => `requirement ${item.requirementNumber}`)
+          .join(", ")}.`,
+        `Materials to have ready: ${buildMaterials(chosenActivities).join(", ")}.`,
+        request.notes.trim() ? `Leader note for families: ${request.notes.trim()}` : "We'll share any follow-up after the meeting."
+      ].join(" ")
+    },
     generatedAt: new Date().toISOString()
   };
 }
 
-export function buildMeetingPlan(rank: Rank, bundle: AdventureBundle, request: MeetingRequest): MeetingPlan {
-  return buildPlan(rank, bundle, request);
+export function buildMeetingPlan(den: DenProfile, rank: Rank, bundle: AdventureBundle, request: MeetingRequest): MeetingPlan {
+  return buildPlan(den, rank, bundle, request);
 }
 
 export function swapMeetingActivity(
+  den: DenProfile,
   rank: Rank,
   bundle: AdventureBundle,
   plan: MeetingPlan,
@@ -286,5 +310,5 @@ export function swapMeetingActivity(
   }
 
   overrides.set(agendaItem.primaryRequirementId, selectedActivityId);
-  return buildPlan(rank, bundle, plan.request, overrides);
+  return buildPlan(den, rank, bundle, plan.request, overrides);
 }
