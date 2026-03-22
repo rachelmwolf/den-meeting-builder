@@ -1,15 +1,17 @@
 import express from "express";
 import type { Request, Response } from "express";
 import {
+  getAdventureBundles,
+  getAdventureTrailData,
   buildYearPlan,
   duplicateMeetingPlan,
-  getAdventureBundle,
   getContentStatus,
   getDenProfile,
   getWorkspace,
   getRank,
   listAdventuresForRank,
   listDenProfiles,
+  listRequirementsForAdventureIds,
   listSavedPlansForDen,
   saveMeetingPlan,
   saveMeetingRecap
@@ -50,6 +52,28 @@ apiRouter.get("/dens/:denId/adventures", (req, res) => {
   res.json(listAdventuresForRank(den.rankId));
 });
 
+apiRouter.get("/dens/:denId/adventure-trail", (req, res) => {
+  const trail = getAdventureTrailData(req.params.denId);
+  if (!trail) {
+    res.status(404).json({ error: "Den not found" });
+    return;
+  }
+  res.json(trail);
+});
+
+apiRouter.get("/dens/:denId/requirements", (req, res) => {
+  const den = getDenProfile(req.params.denId);
+  if (!den) {
+    res.status(404).json({ error: "Den not found" });
+    return;
+  }
+  const rawIds = String(req.query.adventureIds ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  res.json(listRequirementsForAdventureIds(rawIds));
+});
+
 apiRouter.get("/dens/:denId/year-plan", (req, res) => {
   const yearPlan = buildYearPlan(req.params.denId);
   if (!yearPlan) {
@@ -67,12 +91,12 @@ apiRouter.post("/plans/generate", express.json(), (req: Request, res: Response) 
   const request = req.body as MeetingRequest;
   const den = getDenProfile(request.denId);
   const rank = getRank(request.rankId);
-  const bundle = getAdventureBundle(request.adventureId);
-  if (!den || !rank || !bundle) {
-    res.status(404).json({ error: "Den, rank, or adventure not found" });
+  const bundles = getAdventureBundles(request.adventureIds);
+  if (!den || !rank || bundles.length === 0) {
+    res.status(404).json({ error: "Den, rank, or adventures not found" });
     return;
   }
-  res.json(buildMeetingPlan(den, rank, bundle, request));
+  res.json(buildMeetingPlan(den, rank, bundles, request));
 });
 
 apiRouter.post("/plans/save", express.json(), (req: Request, res: Response) => {
@@ -84,12 +108,12 @@ apiRouter.post("/plans/swap", express.json(), (req: Request, res: Response) => {
   const { plan, selectedActivityId, agendaItemId } = req.body as ActivitySwapRequest;
   const den = getDenProfile(plan.denId);
   const rank = getRank(plan.rank.id);
-  const bundle = getAdventureBundle(plan.adventure.id);
-  if (!den || !rank || !bundle) {
-    res.status(404).json({ error: "Den, rank, or adventure not found" });
+  const bundles = getAdventureBundles(plan.adventures.map((adventure) => adventure.id));
+  if (!den || !rank || bundles.length === 0) {
+    res.status(404).json({ error: "Den, rank, or adventures not found" });
     return;
   }
-  res.json(swapMeetingActivity(den, rank, bundle, plan, agendaItemId, selectedActivityId));
+  res.json(swapMeetingActivity(den, rank, bundles, plan, agendaItemId, selectedActivityId));
 });
 
 apiRouter.post("/plans/recap", express.json(), (req: Request, res: Response) => {
