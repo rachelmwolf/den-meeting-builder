@@ -1,4 +1,5 @@
-export type Environment = "indoor" | "outdoor" | "either";
+export type MeetingSpace = "indoor" | "outing-with-travel" | "outdoor";
+export type ActivityMeetingSpace = MeetingSpace | "indoor-or-outdoor" | "unknown";
 export type AdventureKind = "required" | "elective";
 export type CoverageStatus = "automatic" | "leader-review" | "uncovered";
 export type SelectionSource = "recommended" | "swapped" | "added";
@@ -108,10 +109,11 @@ export interface Activity {
   slug: string;
   sourceUrl: string;
   summary: string;
-  location: string;
-  prepMinutes: number | null;
+  meetingSpace: ActivityMeetingSpace;
+  energyLevel: number | null;
+  supplyLevel: number | null;
+  prepLevel: number | null;
   durationMinutes: number | null;
-  difficulty: number | null;
   notes: string;
   previewDetails: string;
 }
@@ -123,7 +125,10 @@ export interface MeetingRequest {
   requirementIds?: string[];
   durationMinutes: number;
   scoutCount: number;
-  environment: Environment;
+  meetingSpace: MeetingSpace;
+  maxEnergyLevel: number;
+  maxSupplyLevel: number;
+  maxPrepLevel: number;
   notes: string;
   meetingDate: string | null;
 }
