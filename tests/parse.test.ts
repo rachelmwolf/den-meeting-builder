@@ -77,6 +77,7 @@ describe("ingest parsers", () => {
       supplyLevel: 2,
       prepLevel: 1,
       durationMinutes: 10,
+      materials: [],
       notes: "",
       previewDetails: ""
     });
@@ -102,6 +103,7 @@ describe("ingest parsers", () => {
       supplyLevel: 4,
       prepLevel: 2,
       durationMinutes: 15,
+      materials: [],
       notes: "",
       previewDetails: ""
     });
@@ -111,5 +113,6 @@ describe("ingest parsers", () => {
     expect(enriched.previewDetails).not.toContain("jQuery(window)");
     expect(enriched.previewDetails).not.toContain("elementor/frontend/init");
     expect(enriched.previewDetails).not.toContain("Lion - Kindergarten Den Doodle Lion Indoor");
+    expect(enriched.materials).toContain("Crayons of various colors, enough to share");
   });
 });
