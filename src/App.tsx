@@ -4,6 +4,7 @@ import type {
   Activity,
   Adventure,
   AdventureTrailData,
+  ContentStatus,
   CoverageStatus,
   DenProfile,
   MeetingSpace,
@@ -55,6 +56,10 @@ function describeProgress(current: number, target: number, required: boolean): s
   return current >= target ? "Covered in year plan" : `${current}/${target} planned`;
 }
 
+function formatOfficialMetric(label: string, value: number | null): string {
+  return value === null ? `${label} not listed` : `${label} ${value}/5`;
+}
+
 function shortenRequirementText(text: string | null, maxLength = 110): string {
   if (!text) return "";
   if (text.length <= maxLength) return text;
@@ -63,9 +68,9 @@ function shortenRequirementText(text: string | null, maxLength = 110): string {
 
 function describeActivityKey(activity: Activity): string[] {
   const details = [labelMeetingSpace(activity.meetingSpace)];
-  if (activity.energyLevel) details.push(`Energy ${activity.energyLevel}/5`);
-  if (activity.supplyLevel) details.push(`Supplies ${activity.supplyLevel}/5`);
-  if (activity.prepLevel) details.push(`Prep ${activity.prepLevel}/5`);
+  details.push(formatOfficialMetric("Energy", activity.energyLevel));
+  details.push(formatOfficialMetric("Supplies", activity.supplyLevel));
+  details.push(formatOfficialMetric("Prep", activity.prepLevel));
   if (activity.durationMinutes) details.push(`${activity.durationMinutes} min`);
   return details;
 }
@@ -81,9 +86,9 @@ type ActivityFitRequest = Pick<MeetingRequest, "meetingSpace" | "maxEnergyLevel"
 function buildActivityKeyIndicators(activity: Activity): Array<{ icon: string; label: string }> {
   return [
     { icon: iconForMeetingSpace(activity.meetingSpace), label: labelMeetingSpace(activity.meetingSpace) },
-    { icon: "⚡", label: activity.energyLevel === null ? "Energy ?" : `${activity.energyLevel}/5` },
-    { icon: "🧰", label: activity.supplyLevel === null ? "Supplies ?" : `${activity.supplyLevel}/5` },
-    { icon: "⏳", label: activity.prepLevel === null ? "Prep ?" : `${activity.prepLevel}/5` }
+    { icon: "⚡", label: formatOfficialMetric("Energy", activity.energyLevel) },
+    { icon: "🧰", label: formatOfficialMetric("Supplies", activity.supplyLevel) },
+    { icon: "⏳", label: formatOfficialMetric("Prep", activity.prepLevel) }
   ];
 }
 
@@ -107,20 +112,23 @@ function scoreActivityFit(activity: Activity, request: ActivityFitRequest): numb
 function buildActivityFitSummary(activity: Activity, request: ActivityFitRequest): string {
   return [
     labelMeetingSpace(activity.meetingSpace),
-    activity.energyLevel === null ? "Energy ?" : `Energy ${activity.energyLevel}/5`,
-    activity.supplyLevel === null ? "Supplies ?" : `Supplies ${activity.supplyLevel}/5`,
-    activity.prepLevel === null ? "Prep ?" : `Prep ${activity.prepLevel}/5`
+    formatOfficialMetric("Energy", activity.energyLevel),
+    formatOfficialMetric("Supplies", activity.supplyLevel),
+    formatOfficialMetric("Prep", activity.prepLevel)
   ].join(" · ");
 }
 
 function splitActivityNotes(activity: Activity): string[] {
-  return [activity.notes, activity.previewDetails]
+  return [activity.notes, activity.previewDetails, ...(activity.materials ?? [])]
     .flatMap((value) => value.split(/\n{2,}/))
     .map((part) => part.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
 
 function getActivityMaterials(activity: Activity): string[] {
+  if (activity.materials.length > 0) {
+    return activity.materials;
+  }
   const blocks = splitActivityNotes(activity);
   return blocks.filter((block) => /(\bbring\b|\bsuppl(y|ies)\b|\bmaterials?\b|\bhandbook\b|\bcrayons?\b|\bpencils?\b|\bmarkers?\b|\bcards?\b|\bpaper\b|\btape\b|\bcones?\b|\brope\b|\bwater bottle\b|\bwhistle\b|\bflashlight\b|\bsunscreen\b|\bhat\b|\bsunglasses\b|\btrail mix\b|\bfirst aid kit\b|\bgear\b)/i.test(block)).slice(0, 4);
 }
@@ -184,6 +192,7 @@ function describeAgendaItemContext(item: MeetingAgendaItem): string | null {
 
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
+  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null);
   const [dens, setDens] = useState<DenProfile[]>([]);
   const [selectedDenId, setSelectedDenId] = useState("");
   const [trailData, setTrailData] = useState<AdventureTrailData | null>(null);
@@ -210,6 +219,7 @@ export function App() {
 
   useEffect(() => {
     api.getWorkspace().then(setWorkspace);
+    api.getContentStatus().then(setContentStatus).catch(() => setContentStatus(null));
     api.listDens().then((nextDens) => {
       setDens(nextDens);
       if (nextDens[0]) {
@@ -364,6 +374,12 @@ export function App() {
   const activePreviewActivity =
     (activePreviewActivityId ? activityLookup.get(activePreviewActivityId) : null) ?? previewOptions[0] ?? null;
   const trailProgress = yearPlan?.trailProgress ?? trailData?.progress ?? null;
+  const contentRankNames = contentStatus?.importedRanks.map((rank) => rank.rankName).join(", ") ?? "";
+  const curriculumCoverageSummary = contentStatus
+    ? contentStatus.activityFieldCoverage.totalActivities > 0
+      ? `Space ${contentStatus.activityFieldCoverage.meetingSpaceCount}/${contentStatus.activityFieldCoverage.totalActivities} · Energy ${contentStatus.activityFieldCoverage.energyLevelCount}/${contentStatus.activityFieldCoverage.totalActivities} · Supplies ${contentStatus.activityFieldCoverage.supplyLevelCount}/${contentStatus.activityFieldCoverage.totalActivities} · Prep ${contentStatus.activityFieldCoverage.prepLevelCount}/${contentStatus.activityFieldCoverage.totalActivities}`
+      : "No imported activities yet."
+    : "";
   const selectedRequirementCount = selectedRequirementIds.length;
   const estimatedMinimumMinutes = useMemo(() => {
     if (selectedRequirementCount === 0) return 0;
@@ -1176,6 +1192,31 @@ export function App() {
         </section>
 
         <aside className="sidebar-stack">
+          {contentStatus ? (
+            <section className="panel">
+              <h2>Curriculum Status</h2>
+              <p className="subtle-line">
+                {contentStatus.datasetMode === "demo"
+                  ? "Demo content only."
+                  : `Official import loaded for ${contentRankNames}.`}
+              </p>
+              <div className="status-grid">
+                <div className="summary-card">
+                  <span>Activity coverage</span>
+                  <strong>{contentStatus.activityFieldCoverage.totalActivities} activities · {curriculumCoverageSummary}</strong>
+                </div>
+                <div className="summary-card">
+                  <span>Materials extracted</span>
+                  <strong>
+                    {contentStatus.activityFieldCoverage.totalActivities > 0
+                      ? `${contentStatus.activityFieldCoverage.materialsCount}/${contentStatus.activityFieldCoverage.totalActivities}`
+                      : String(contentStatus.activityFieldCoverage.materialsCount)}
+                  </strong>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <section className="panel">
             <h2>Meeting Scope</h2>
             <p className="subtle-line">Use the setup steps to trim what appears in the final packet.</p>
