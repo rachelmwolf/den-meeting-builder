@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type {
   Activity,
+  ActivityFieldCoverage,
   Adventure,
   AdventureBundle,
   AdventureTrailBucket,
@@ -94,6 +95,7 @@ export function initDb(): void {
       prep_minutes INTEGER,
       duration_minutes INTEGER,
       difficulty INTEGER,
+      materials_json TEXT NOT NULL DEFAULT '[]',
       notes TEXT NOT NULL,
       preview_details TEXT NOT NULL DEFAULT ''
     );
@@ -136,6 +138,7 @@ export function initDb(): void {
   ensureColumn("meeting_plans", "month_key", "TEXT NOT NULL DEFAULT 'unscheduled'");
   ensureColumn("meeting_plans", "month_label", "TEXT NOT NULL DEFAULT 'Unscheduled'");
   ensureColumn("meeting_plans", "theme", "TEXT NOT NULL DEFAULT 'General'");
+  ensureColumn("activities", "materials_json", "TEXT NOT NULL DEFAULT '[]'");
 }
 
 function ensureColumn(tableName: string, columnName: string, definition: string): void {
@@ -196,6 +199,16 @@ function mapRequirement(row: Record<string, unknown>): Requirement {
 }
 
 function mapActivity(row: Record<string, unknown>): Activity {
+  const materialsValue = String(row.materials_json ?? "[]");
+  let materials: string[] = [];
+  try {
+    const parsed = JSON.parse(materialsValue);
+    if (Array.isArray(parsed)) {
+      materials = parsed.map((entry) => String(entry));
+    }
+  } catch {
+    materials = [];
+  }
   return {
     id: String(row.id),
     adventureId: String(row.adventure_id),
@@ -213,9 +226,21 @@ function mapActivity(row: Record<string, unknown>): Activity {
     supplyLevel: row.supply_level === null || row.supply_level === undefined ? null : Number(row.supply_level),
     prepLevel: row.prep_level === null || row.prep_level === undefined ? null : Number(row.prep_level),
     durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
+    materials,
     notes: String(row.notes),
     previewDetails: String(row.preview_details ?? "")
   };
+}
+
+function countMaterials(activityRows: Array<Record<string, unknown>>): number {
+  return activityRows.filter((row) => {
+    try {
+      const materials = JSON.parse(String(row.materials_json ?? "[]")) as unknown[];
+      return Array.isArray(materials) && materials.length > 0;
+    } catch {
+      return false;
+    }
+  }).length;
 }
 
 function fallbackMeetingSpace(value: string): Activity["meetingSpace"] {
@@ -354,9 +379,9 @@ export function upsertActivity(activity: Activity): void {
   db.prepare(`
     INSERT INTO activities (
       id, adventure_id, requirement_id, name, slug, source_url, summary, location,
-      meeting_space, energy_level, supply_level, prep_level, prep_minutes, duration_minutes, difficulty, notes, preview_details
+      meeting_space, energy_level, supply_level, prep_level, prep_minutes, duration_minutes, difficulty, materials_json, notes, preview_details
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       adventure_id = excluded.adventure_id,
       requirement_id = excluded.requirement_id,
@@ -372,6 +397,7 @@ export function upsertActivity(activity: Activity): void {
       prep_minutes = excluded.prep_minutes,
       duration_minutes = excluded.duration_minutes,
       difficulty = excluded.difficulty,
+      materials_json = excluded.materials_json,
       notes = excluded.notes,
       preview_details = excluded.preview_details
   `).run(
@@ -390,6 +416,7 @@ export function upsertActivity(activity: Activity): void {
     activity.prepLevel,
     activity.durationMinutes,
     activity.energyLevel,
+    JSON.stringify(activity.materials ?? []),
     activity.notes,
     activity.previewDetails
   );
@@ -547,6 +574,20 @@ export function getContentStatus(): ContentStatus {
   const lastRefreshedAt = lastRefreshedRow?.last_refreshed_at ? String(lastRefreshedRow.last_refreshed_at) : null;
   const totalRanks = countRows("ranks");
   const importedRankCount = importedRanks.length;
+  const activityRows = db
+    .prepare(`
+      SELECT meeting_space, energy_level, supply_level, prep_level, materials_json
+      FROM activities
+    `)
+    .all() as Array<Record<string, unknown>>;
+  const activityFieldCoverage: ActivityFieldCoverage = {
+    totalActivities: activityRows.length,
+    meetingSpaceCount: activityRows.filter((row) => Boolean(row.meeting_space)).length,
+    energyLevelCount: activityRows.filter((row) => row.energy_level !== null && row.energy_level !== undefined).length,
+    supplyLevelCount: activityRows.filter((row) => row.supply_level !== null && row.supply_level !== undefined).length,
+    prepLevelCount: activityRows.filter((row) => row.prep_level !== null && row.prep_level !== undefined).length,
+    materialsCount: countMaterials(activityRows)
+  };
   const datasetMode =
     importedRankCount === 0
       ? "demo"
@@ -557,7 +598,8 @@ export function getContentStatus(): ContentStatus {
   return {
     datasetMode,
     importedRanks,
-    lastRefreshedAt
+    lastRefreshedAt,
+    activityFieldCoverage
   };
 }
 
