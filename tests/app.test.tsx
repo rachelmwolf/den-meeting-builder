@@ -63,9 +63,12 @@ function buildGeneratedPlan(): MeetingPlan {
       rankId: demoContent.rank.id,
       adventureIds: [demoContent.adventures[0].id, demoContent.adventures[1].id],
       requirementIds: [demoContent.requirements[0].id, demoContent.requirements[3].id],
-      durationMinutes: 60,
+      durationMinutes: 50,
       scoutCount: 6,
-      environment: "indoor",
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
       notes: "",
       meetingDate: "2026-09-17"
     },
@@ -77,7 +80,7 @@ function buildGeneratedPlan(): MeetingPlan {
         kind: "activity",
         title: "Den Doodle Lion",
         durationMinutes: 15,
-        description: "The den doodle is a craft project.",
+        description: "The den doodle is a craft project. Chosen because it matched indoor, energy 2/3 stays within your preference, supplies 4/3 is above your preferred limit, prep 2/3 stays within your preference.",
         adventureId: demoContent.adventures[0].id,
         adventureName: demoContent.adventures[0].name,
         requirementIds: [demoContent.requirements[0].id],
@@ -154,7 +157,7 @@ describe("App", () => {
           kind: "activity",
           title: "Animal Warmups",
           durationMinutes: 15,
-          description: "Scouts move like animals while learning simple warm-up motions.",
+          description: "Scouts move like animals while learning simple warm-up motions. Chosen because it works in either indoor or outdoor space, energy 3/3 stays within your preference, supplies 1/3 stays within your preference, prep 1/3 stays within your preference.",
           adventureId: demoContent.adventures[1].id,
           adventureName: demoContent.adventures[1].name,
           requirementIds: [demoContent.requirements[4].id],
@@ -312,9 +315,11 @@ describe("App", () => {
     expect(await screen.findByText(/Guide the setup\. Focus the packet\./i)).toBeInTheDocument();
     expect(await screen.findByText("Step 1 · Den and Meeting Basics")).toBeInTheDocument();
     expect(await screen.findByText("Adventure Trail Progress")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("50")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Meeting Space")).toHaveValue("indoor");
   });
 
-  test("walks through the wizard, generates a packet, and swaps an activity", async () => {
+  test("walks through the wizard, reviews a packet first, and then swaps an activity", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
@@ -326,6 +331,10 @@ describe("App", () => {
 
     expect(await screen.findByText("Leader Packet")).toBeInTheDocument();
     expect((await screen.findAllByText(/Bobcat Lion, Fun on the Run/i)).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Customize this plan")).toBeInTheDocument();
+    expect(screen.queryByText("Preview and Swap Activity")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Customize this plan"));
 
     fireEvent.click(await screen.findByText("Preview and Swap Activity"));
     expect(await screen.findByText("Activity Options")).toBeInTheDocument();
@@ -333,6 +342,7 @@ describe("App", () => {
     expect(
       await screen.findByText(/Using it will add that requirement as its own agenda block/i)
     ).toBeInTheDocument();
+    expect((await screen.findAllByText(/Energy 3\/5/i)).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("Use This Activity"));
 
     expect(await screen.findByLabelText(/Fun on the Run requirement 1 completed/i)).toBeInTheDocument();
