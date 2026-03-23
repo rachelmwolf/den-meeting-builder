@@ -40,7 +40,7 @@ export const adventurePageFixture = `
       <div>Indoor</div>
       <div>2</div>
       <div>4</div>
-      <div>4</div>
+      <div>2</div>
       <p>The den doodle is a craft project that can be used to track attendance, reward good behavior, and completion of requirements.</p>
     </article>
     <article>
@@ -76,6 +76,9 @@ export const adventurePageFixture = `
 
 export const activityPageFixture = `
   <main id="main">
+    <p>Energy Level of Cub Scouts 1 is very low energy to 5 is very high energy. 2</p>
+    <p>Supply List for this Activity 1 No supplies needed to 5 custom build or uncommon items. 2</p>
+    <p>Preparation Time for this Activity 1 minimal prep to 5 a week or more ahead of time. 1</p>
     <p>Gather scouts in a circle and explain how compliments help a den feel friendly and welcoming.</p>
     <p>Invite each scout to offer one specific compliment to another scout.</p>
     <ul>
@@ -92,6 +95,9 @@ export const noisyActivityPageFixture = `
         tippy('#demo', { content: 'Energy Level of Cub Scouts' });
       });
     </script>
+    <p>Energy Level of Cub Scouts 1 is very low energy to 5 is very high energy. 2</p>
+    <p>Supply List for this Activity 1 No supplies needed to 5 custom build or uncommon items. 4</p>
+    <p>Preparation Time for this Activity 1 minimal prep to 5 a week or more ahead of time. 2</p>
     <p>The den doodle is a craft project that can be used to track attendance, reward good behavior, and completion of requirements.</p>
     <p>Lion - Kindergarten Den Doodle Lion Indoor</p>
     <p>jQuery(window).on('elementor/frontend/init elementor/popup/show', function() { var $currentTooltip = '#eael'; });</p>
