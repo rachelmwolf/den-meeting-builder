@@ -127,6 +127,7 @@ const activities: Activity[] = [
     supplyLevel: 4,
     prepLevel: 2,
     durationMinutes: 15,
+    materials: ["Simple craft supplies", "Large display space"],
     notes: "Bring simple craft supplies and display the doodle where Lions can add to it.",
     previewDetails:
       "Use a den doodle to welcome scouts, track attendance, and give everyone a visible place in the den. Prep simple craft materials and leave time for each scout to add their piece."
@@ -144,6 +145,7 @@ const activities: Activity[] = [
     supplyLevel: 3,
     prepLevel: 2,
     durationMinutes: 15,
+    materials: ["Paper or cardstock", "Markers or crayons", "Tape or glue"],
     notes: "Good alternate for requirement 1 if the den wants a collaborative craft.",
     previewDetails:
       "Make a simple den flag together so each scout contributes a name, symbol, or color. This is a strong alternate for getting to know den members while making something the group can reuse."
@@ -161,6 +163,7 @@ const activities: Activity[] = [
     supplyLevel: 2,
     prepLevel: 1,
     durationMinutes: 10,
+    materials: ["Open circle seating", "Optional talking prompt card"],
     notes: "Great for circle time and practicing friendly behavior.",
     previewDetails:
       "Run this as a short circle game where each scout gives a compliment to another scout. It works well as a discussion-based activity with minimal supplies."
@@ -178,6 +181,7 @@ const activities: Activity[] = [
     supplyLevel: 2,
     prepLevel: 1,
     durationMinutes: 10,
+    materials: ["Prompt questions", "Scout Law reference"],
     notes: "Invite each scout to share one example from school or home.",
     previewDetails:
       "Use simple prompts to help scouts identify what doing their best looks like at school, at home, and in the den. Encourage each scout to share one example."
@@ -195,6 +199,7 @@ const activities: Activity[] = [
     supplyLevel: 1,
     prepLevel: 1,
     durationMinutes: 10,
+    materials: ["Open floor space", "Optional music or timer"],
     notes: "Use this first to get energy focused before active games.",
     previewDetails:
       "Lead the den through a quick series of animal-themed warmups like bear crawls, flamingo balance, and frog jumps to make stretching feel playful."
@@ -212,6 +217,7 @@ const activities: Activity[] = [
     supplyLevel: 2,
     prepLevel: 2,
     durationMinutes: 15,
+    materials: ["Tape or cones", "Open floor space"],
     notes: "Tape lines on the floor or use cones outdoors.",
     previewDetails:
       "Set up a short balance and movement path that lets scouts practice control, speed changes, and coordination while cheering each other on."
@@ -229,6 +235,7 @@ const activities: Activity[] = [
     supplyLevel: 1,
     prepLevel: 1,
     durationMinutes: 12,
+    materials: ["Outdoor running space", "Simple relay markers"],
     notes: "Strong alternative when the den has room to run.",
     previewDetails:
       "Use a short relay with simple tasks and built-in cheers so scouts move quickly and celebrate one another without making the game too competitive."
@@ -246,6 +253,7 @@ const activities: Activity[] = [
     supplyLevel: 1,
     prepLevel: 1,
     durationMinutes: 15,
+    materials: ["Outdoor space", "Optional nature cards"],
     notes: "Good for a calm outdoor reset.",
     previewDetails:
       "Walk slowly through an outdoor space and ask scouts to point out what they hear, see, and smell so they practice observation without rushing."
@@ -263,6 +271,7 @@ const activities: Activity[] = [
     supplyLevel: 2,
     prepLevel: 1,
     durationMinutes: 10,
+    materials: ["Pictures or actual gear examples"],
     notes: "Useful if weather moves the den indoors.",
     previewDetails:
       "Use pictures or actual gear to help scouts talk about what they should wear or carry for a simple outdoor walk, even if the conversation happens inside."
