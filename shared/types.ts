@@ -1,7 +1,7 @@
 export type Environment = "indoor" | "outdoor" | "either";
 export type AdventureKind = "required" | "elective";
 export type CoverageStatus = "automatic" | "leader-review" | "uncovered";
-export type SelectionSource = "recommended" | "swapped";
+export type SelectionSource = "recommended" | "swapped" | "added";
 export type AdventureTrailBucketKey =
   | "character-leadership"
   | "outdoors"
@@ -150,12 +150,15 @@ export interface MeetingAgendaItem {
   adventureId: string | null;
   adventureName: string | null;
   requirementIds: string[];
+  requirementNumber: number | null;
+  requirementText: string | null;
   activityId: string | null;
   primaryRequirementId: string | null;
   selectedActivityId: string | null;
   alternativeActivityIds: string[];
   selectionSource: SelectionSource | null;
   coverageStatus: CoverageStatus | null;
+  addedFromSelection: boolean;
   editableNotes: string;
 }
 
