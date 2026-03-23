@@ -425,53 +425,14 @@ label textarea {
 .trail-card {
   background: rgba(247, 244, 237, 0.82);
   border-radius: 18px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid rgba(28, 36, 38, 0.06);
-}
-
-.trail-card-collapsible {
-  padding: 10px 12px;
-  display: grid;
-  gap: 8px;
-  width: 100%;
-}
-
-.trail-card-collapsible > summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.trail-card-collapsible > summary::-webkit-details-marker {
-  display: none;
 }
 
 .trail-card-header {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   align-items: start;
-}
-
-.trail-summary-meta {
-  display: grid;
-  justify-items: end;
-  gap: 8px;
-}
-
-.trail-disclosure {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--accent-strong);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.trail-disclosure-button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
 }
 
 .trail-option {
@@ -480,7 +441,7 @@ label textarea {
   gap: 10px;
   align-items: start;
   border-radius: 16px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   background: rgba(255, 255, 255, 0.7);
 }
 
@@ -496,8 +457,8 @@ label textarea {
 
 .trail-options {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  padding-top: 10px;
-  gap: 10px;
+  padding-top: 8px;
+  gap: 8px;
 }
 
 .trail-card-elective {
