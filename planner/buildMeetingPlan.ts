@@ -15,6 +15,32 @@ import type {
 } from "../shared/types.js";
 import { chunkedDuration, labelMeetingSpace, makeId } from "../shared/utils.js";
 
+function splitContentBlocks(value: string): string[] {
+  return value
+    .split(/\n{2,}/)
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function looksLikeMaterialText(value: string): boolean {
+  return /(\bbring\b|\bsuppl(y|ies)\b|\bmaterials?\b|\bhandbook\b|\bcrayons?\b|\bpencils?\b|\bmarkers?\b|\bcards?\b|\bpaper\b|\btape\b|\bcones?\b|\brope\b|\bwater bottle\b|\bwhistle\b|\bflashlight\b|\bsunscreen\b|\bhat\b|\bsunglasses\b|\btrail mix\b|\bfirst aid kit\b|\bgear\b)/i.test(value);
+}
+
+function collectMaterialHints(activity: Activity): string[] {
+  const blocks = [...splitContentBlocks(activity.notes), ...splitContentBlocks(activity.previewDetails)];
+  const hints: string[] = [];
+  for (const block of blocks) {
+    if (block === activity.summary) {
+      continue;
+    }
+    if (!looksLikeMaterialText(block)) {
+      continue;
+    }
+    hints.push(block);
+  }
+  return hints;
+}
+
 type RequirementSelection = {
   adventureId: string;
   adventureName: string;
@@ -160,6 +186,9 @@ function buildCoverage(selections: RequirementSelection[]): CoverageItem[] {
 function buildMaterials(activities: Activity[]): string[] {
   const materials = new Set<string>();
   for (const activity of activities) {
+    for (const hint of collectMaterialHints(activity)) {
+      materials.add(hint);
+    }
     if (/craft|make|draw|color|flag|doodle/i.test(activity.name + activity.summary + activity.previewDetails)) {
       materials.add("Basic craft supplies");
     }
