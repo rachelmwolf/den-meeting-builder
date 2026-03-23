@@ -131,6 +131,13 @@ function buildTimeShortNote(plan: MeetingPlan): string {
   return `Defer or shorten "${candidate.title}" first if the meeting runs long, then capture any unfinished requirement work in Scoutbook later.`;
 }
 
+function describeAgendaItemContext(item: MeetingAgendaItem): string | null {
+  if (item.requirementNumber) {
+    return item.adventureName ? `Requirement ${item.requirementNumber} · ${item.adventureName}` : `Requirement ${item.requirementNumber}`;
+  }
+  return item.adventureName ?? null;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
   const [dens, setDens] = useState<DenProfile[]>([]);
@@ -919,10 +926,7 @@ export function App() {
                             <div key={`packet-activity-${item.id}`} className="packet-activity-row">
                               <div>
                                 <strong>{item.title}</strong>
-                                <p>
-                                  {item.requirementNumber ? `Requirement ${item.requirementNumber}` : "Packet support block"}
-                                  {item.adventureName ? ` · ${item.adventureName}` : ""}
-                                </p>
+                                {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
                               </div>
                               <div>
                                 <strong>{item.durationMinutes} min</strong>
@@ -1029,10 +1033,7 @@ export function App() {
                           <div key={`print-activity-${item.id}`} className="print-activity-row">
                             <div>
                               <strong>{item.title}</strong>
-                              <p>
-                                {item.requirementNumber ? `Requirement ${item.requirementNumber}` : "Packet support block"}
-                                {item.adventureName ? ` · ${item.adventureName}` : ""}
-                              </p>
+                              {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
                             </div>
                             <div>
                               <strong>{item.durationMinutes} min</strong>
