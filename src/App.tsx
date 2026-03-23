@@ -414,11 +414,18 @@ export function App() {
   function renderCapControl(
     label: string,
     value: number,
+    helper: string,
     onChange: (value: number) => void
   ) {
     return (
-      <label>
-        {label}
+      <div className="cap-control">
+        <div className="cap-control-head">
+          <span>{label}</span>
+          <span className="control-help" title={helper} aria-label={helper}>
+            ?
+          </span>
+          <strong>{value}/5</strong>
+        </div>
         <input
           type="range"
           min={1}
@@ -430,8 +437,8 @@ export function App() {
             invalidateGeneratedPlan();
           }}
         />
-        <span className="subtle-line">Maximum allowed: {value}/5</span>
-      </label>
+        <span className="subtle-line cap-limit">Maximum allowed: {value}/5</span>
+      </div>
     );
   }
 
@@ -561,9 +568,13 @@ export function App() {
                     <p>Use the official activity key to steer the recommendations, not to block the planner.</p>
                   </div>
                   <div className="setup-grid setup-grid-constraints">
-                    <label className="field-span-2">
+                    <label>
                       Meeting Space
+                      <span className="control-help" title="Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight's meeting." aria-label="Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight's meeting.">
+                        ?
+                      </span>
                       <select
+                        aria-label="Meeting Space"
                         value={request.meetingSpace}
                         onChange={(event) => {
                           setRequest((current) => ({ ...current, meetingSpace: event.target.value as MeetingSpace }));
@@ -576,15 +587,17 @@ export function App() {
                       </select>
                     </label>
 
-                    {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, (value) =>
-                      setRequest((current) => ({ ...current, maxEnergyLevel: value }))
-                    )}
-                    {renderCapControl("Max Supply List", request.maxSupplyLevel, (value) =>
-                      setRequest((current) => ({ ...current, maxSupplyLevel: value }))
-                    )}
-                    {renderCapControl("Max Prep Time", request.maxPrepLevel, (value) =>
-                      setRequest((current) => ({ ...current, maxPrepLevel: value }))
-                    )}
+                    <div className="setup-caps">
+                      {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, "1 is calm and low-energy. 5 is active and fast-paced.", (value) =>
+                        setRequest((current) => ({ ...current, maxEnergyLevel: value }))
+                      )}
+                      {renderCapControl("Max Supply List", request.maxSupplyLevel, "1 means very few supplies. 5 means a larger supply load.", (value) =>
+                        setRequest((current) => ({ ...current, maxSupplyLevel: value }))
+                      )}
+                      {renderCapControl("Max Prep Time", request.maxPrepLevel, "1 is almost no prep. 5 is a heavier setup load for the leader.", (value) =>
+                        setRequest((current) => ({ ...current, maxPrepLevel: value }))
+                      )}
+                    </div>
                   </div>
                 </section>
               </div>
