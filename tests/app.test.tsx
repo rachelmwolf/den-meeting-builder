@@ -81,12 +81,15 @@ function buildGeneratedPlan(): MeetingPlan {
         adventureId: demoContent.adventures[0].id,
         adventureName: demoContent.adventures[0].name,
         requirementIds: [demoContent.requirements[0].id],
+        requirementNumber: 1,
+        requirementText: demoContent.requirements[0].text,
         activityId: demoContent.activities[0].id,
         primaryRequirementId: demoContent.requirements[0].id,
         selectedActivityId: demoContent.activities[0].id,
         alternativeActivityIds: demoContent.activities.slice(1).map((activity) => activity.id),
         selectionSource: "recommended",
         coverageStatus: "automatic",
+        addedFromSelection: false,
         editableNotes: "Use the official activity card."
       }
     ],
@@ -145,34 +148,58 @@ describe("App", () => {
       ...generatedPlan,
       id: "plan-1b",
       agenda: [
+        generatedPlan.agenda[0],
         {
-          ...generatedPlan.agenda[0],
+          id: "agenda-2",
+          kind: "activity",
           title: "Animal Warmups",
+          durationMinutes: 15,
+          description: "Scouts move like animals while learning simple warm-up motions.",
           adventureId: demoContent.adventures[1].id,
           adventureName: demoContent.adventures[1].name,
+          requirementIds: [demoContent.requirements[4].id],
+          requirementNumber: 1,
+          requirementText: demoContent.requirements[4].text,
           activityId: demoContent.activities.find((activity) => activity.name === "Animal Warmups")!.id,
+          primaryRequirementId: demoContent.requirements[4].id,
           selectedActivityId: demoContent.activities.find((activity) => activity.name === "Animal Warmups")!.id,
-          selectionSource: "swapped",
-          coverageStatus: "leader-review",
-          description: "Scouts move like animals while learning simple warm-up motions."
+          alternativeActivityIds: demoContent.activities
+            .filter((activity) => activity.id !== demoContent.activities.find((candidate) => candidate.name === "Animal Warmups")!.id)
+            .map((activity) => activity.id),
+          selectionSource: "added",
+          coverageStatus: "automatic",
+          addedFromSelection: true,
+          editableNotes: "Scouts move like animals while learning simple warm-up motions."
         }
       ],
       coverage: [
         {
           adventureId: demoContent.adventures[0].id,
           adventureName: demoContent.adventures[0].name,
-          requirementId: demoContent.requirements[0].id,
+        requirementId: demoContent.requirements[0].id,
+        requirementNumber: 1,
+        requirementText: demoContent.requirements[0].text,
+        activityId: demoContent.activities[0].id,
+        activityName: demoContent.activities[0].name,
+        covered: true,
+        coverageStatus: "automatic",
+        reason: "Covered with Den Doodle Lion."
+        },
+        {
+          adventureId: demoContent.adventures[1].id,
+          adventureName: demoContent.adventures[1].name,
+          requirementId: demoContent.requirements[4].id,
           requirementNumber: 1,
-          requirementText: demoContent.requirements[0].text,
+          requirementText: demoContent.requirements[4].text,
           activityId: demoContent.activities.find((activity) => activity.name === "Animal Warmups")!.id,
           activityName: "Animal Warmups",
           covered: true,
-          coverageStatus: "leader-review",
-          reason: "Uses Animal Warmups. Review the requirement before marking it complete because this activity was suggested for a different requirement or adventure."
+          coverageStatus: "automatic",
+          reason: "Covered with Animal Warmups."
         }
       ],
       leaderNotes:
-        "One or more swapped activities support the meeting but need leader review before you mark the requirement complete."
+        "This plan covers each selected requirement with an official linked activity. Confirm completion based on actual meeting delivery."
     };
 
     fetchMock.mockImplementation((input: string | URL, _init?: RequestInit) => {
@@ -303,10 +330,12 @@ describe("App", () => {
     fireEvent.click(await screen.findByText("Preview and Swap Activity"));
     expect(await screen.findByText("Activity Options")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Animal Warmups"));
-    expect(await screen.findByText(/requirement completion will move to leader review/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Using it will add that requirement as its own agenda block/i)
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByText("Use This Activity"));
 
-    expect(await screen.findByText("Leader review")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Fun on the Run requirement 1 completed/i)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/plans/swap", expect.objectContaining({ method: "POST" }));
   });
 
