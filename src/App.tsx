@@ -212,6 +212,14 @@ export function App() {
     () => trailData?.buckets.flatMap((bucket) => bucket.adventures) ?? [],
     [trailData]
   );
+  const requiredTrailBuckets = useMemo(
+    () => trailData?.buckets.filter((bucket) => bucket.required) ?? [],
+    [trailData]
+  );
+  const electiveTrailBuckets = useMemo(
+    () => trailData?.buckets.filter((bucket) => !bucket.required) ?? [],
+    [trailData]
+  );
   const selectedAdventures = allTrailAdventures.filter((adventure) => selectedAdventureIds.includes(adventure.id));
   const activityLookup = useMemo(
     () => new Map((plan?.activityLibrary ?? []).map((activity) => [activity.id, activity])),
@@ -610,11 +618,20 @@ export function App() {
                 </div>
               </div>
 
-              <div className="trail-grid">
+              <section className="trail-section">
                 {trailLoading ? <div className="empty-state">Loading Adventure Trail...</div> : null}
                 {!trailLoading && trailError ? <div className="empty-state">Adventure Trail could not be loaded: {trailError}</div> : null}
                 {!trailLoading && !trailError
-                  ? trailData?.buckets.map((bucket) => {
+                  ? (
+                    <>
+                      <div className="trail-section-head">
+                        <div>
+                          <span className="section-eyebrow">Required Trail</span>
+                          <p className="subtle-line">These adventures shape the rank path and should stay easy to scan.</p>
+                        </div>
+                      </div>
+                      <div className="trail-grid trail-grid-required">
+                        {requiredTrailBuckets.map((bucket) => {
                   const progressBucket = trailProgress?.buckets.find((item) => item.key === bucket.key);
                   const content = (
                     <div className="trail-options">
@@ -637,56 +654,10 @@ export function App() {
                       )}
                     </div>
                   );
-                  if (!bucket.required) {
-                    return (
-                      <article key={bucket.key} className="trail-card trail-card-collapsible">
-                        <div className="trail-card-header">
-                          <div>
-                            <span className="agenda-kind">{bucket.required ? "Required Trail" : "Elective Trail"}</span>
-                            <h3>{bucket.label}</h3>
-                          </div>
-                          <div className="trail-summary-meta">
-                            {progressBucket ? (
-                              <span className={`coverage-chip ${progressBucket.completedCount >= progressBucket.targetCount ? "coverage-automatic" : "coverage-uncovered"}`}>
-                                {describeProgress(progressBucket.completedCount, progressBucket.targetCount, bucket.required)}
-                              </span>
-                            ) : null}
-                            <button
-                              className="trail-disclosure trail-disclosure-button"
-                              type="button"
-                              onClick={() =>
-                                setOpenElectiveBuckets((current) => {
-                                  const next = new Set(current);
-                                  if (next.has(bucket.key)) {
-                                    next.delete(bucket.key);
-                                  } else {
-                                    next.add(bucket.key);
-                                  }
-                                  return next;
-                                })
-                              }
-                            >
-                              <span aria-hidden="true">{openElectiveBuckets.has(bucket.key) ? "▴" : "▾"}</span>
-                              <span>{openElectiveBuckets.has(bucket.key) ? "Click to collapse" : "Click to expand"}</span>
-                            </button>
-                          </div>
-                        </div>
-                        {openElectiveBuckets.has(bucket.key) ? (
-                          <>
-                            <p className="subtle-line">Elective adventures stay in the same grid so you can compare them at a glance.</p>
-                            {content}
-                          </>
-                        ) : (
-                          <p className="subtle-line">Elective adventures are collapsed to keep the trail short.</p>
-                        )}
-                      </article>
-                    );
-                  }
                   return (
                     <article key={bucket.key} className="trail-card">
                       <div className="trail-card-header">
                         <div>
-                          <span className="agenda-kind">{bucket.required ? "Required Trail" : "Elective Trail"}</span>
                           <h3>{bucket.label}</h3>
                         </div>
                         {progressBucket ? (
@@ -698,9 +669,87 @@ export function App() {
                       {content}
                     </article>
                   );
-                    })
+                        })}
+                      </div>
+
+                      <div className="trail-section-head trail-section-head-electives">
+                        <div>
+                          <span className="section-eyebrow">Elective Trail</span>
+                          <p className="subtle-line">Keep electives collapsed unless the den needs them. When open, the cards should scan like the required trail.</p>
+                        </div>
+                      </div>
+                      <div className="trail-grid trail-grid-electives">
+                        {electiveTrailBuckets.map((bucket) => {
+                          const progressBucket = trailProgress?.buckets.find((item) => item.key === bucket.key);
+                          const content = (
+                            <div className="trail-options">
+                              {bucket.adventures.length ? (
+                                bucket.adventures.map((adventure) => (
+                                  <label key={adventure.id} className={`trail-option ${selectedAdventureIds.includes(adventure.id) ? "trail-option-active" : ""}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedAdventureIds.includes(adventure.id)}
+                                      onChange={() => toggleAdventure(adventure.id)}
+                                    />
+                                    <div>
+                                      <strong>{adventure.name}</strong>
+                                      <p>{adventure.kind === "required" ? "Required adventure" : "Elective adventure"}</p>
+                                    </div>
+                                  </label>
+                                ))
+                              ) : (
+                                <div className="empty-state compact-empty">No adventures imported for this bucket yet.</div>
+                              )}
+                            </div>
+                          );
+                          return (
+                            <article key={bucket.key} className="trail-card trail-card-collapsible trail-card-elective">
+                              <div className="trail-card-header">
+                                <div>
+                                  <h3>{bucket.label}</h3>
+                                </div>
+                                <div className="trail-summary-meta">
+                                  {progressBucket ? (
+                                    <span className={`coverage-chip ${progressBucket.completedCount >= progressBucket.targetCount ? "coverage-automatic" : "coverage-uncovered"}`}>
+                                      {describeProgress(progressBucket.completedCount, progressBucket.targetCount, bucket.required)}
+                                    </span>
+                                  ) : null}
+                                  <button
+                                    className="trail-disclosure trail-disclosure-button"
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenElectiveBuckets((current) => {
+                                        const next = new Set(current);
+                                        if (next.has(bucket.key)) {
+                                          next.delete(bucket.key);
+                                        } else {
+                                          next.add(bucket.key);
+                                        }
+                                        return next;
+                                      })
+                                    }
+                                  >
+                                    <span aria-hidden="true">{openElectiveBuckets.has(bucket.key) ? "▴" : "▾"}</span>
+                                    <span>{openElectiveBuckets.has(bucket.key) ? "Click to collapse" : "Click to expand"}</span>
+                                  </button>
+                                </div>
+                              </div>
+                              {openElectiveBuckets.has(bucket.key) ? (
+                                <>
+                                  <p className="subtle-line">Elective adventures stay in the same grid so you can compare them at a glance.</p>
+                                  {content}
+                                </>
+                              ) : (
+                                <p className="subtle-line">Elective adventures are collapsed to keep the trail short.</p>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )
                   : null}
-              </div>
+              </section>
 
               <div className="wizard-actions">
                 <button className="secondary-button" onClick={() => setCurrentStep(1)}>
