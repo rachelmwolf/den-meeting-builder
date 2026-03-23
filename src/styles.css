@@ -270,6 +270,20 @@ label textarea {
   border: 1px solid rgba(23, 33, 43, 0.06);
 }
 
+.trail-card-collapsible {
+  padding: 0;
+}
+
+.trail-card-collapsible > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 18px;
+}
+
+.trail-card-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
 .trail-card-header {
   display: grid;
   gap: 10px;
@@ -297,7 +311,8 @@ label textarea {
 }
 
 .trail-options {
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  padding-top: 14px;
 }
 
 .trail-option p,
@@ -604,6 +619,9 @@ label textarea {
 .print-sheet {
   margin-top: 10px;
   color: #17212b;
+  font-family: "Arial", "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .print-sheet-header,
@@ -619,21 +637,23 @@ label textarea {
 }
 
 .print-section {
-  border: 1px solid rgba(23, 33, 43, 0.12);
-  border-radius: 14px;
-  padding: 14px 16px;
-  background: white;
+  border-top: 1px solid rgba(23, 33, 43, 0.14);
+  padding: 10px 0;
+  background: transparent;
+  border-radius: 0;
 }
 
 .print-section h3 {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .print-budget {
   justify-self: end;
-  border-radius: 999px;
-  padding: 8px 12px;
   font-weight: 700;
+  padding-top: 2px;
 }
 
 .print-budget-fits {
@@ -654,8 +674,8 @@ label textarea {
 
 .print-activity-row {
   grid-template-columns: minmax(0, 220px) 1fr;
-  border-top: 1px solid rgba(23, 33, 43, 0.1);
-  padding-top: 10px;
+  border-top: 1px solid rgba(23, 33, 43, 0.08);
+  padding-top: 8px;
 }
 
 .print-activity-row:first-child {
@@ -664,7 +684,7 @@ label textarea {
 }
 
 .print-activity-row p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
 }
 
 .reflect-block {
@@ -773,16 +793,35 @@ label textarea {
 
   .print-sheet {
     margin: 0;
+    font-family: "Arial", "Helvetica Neue", Helvetica, sans-serif;
   }
 
   .print-section {
-    border: 1px solid rgba(23, 33, 43, 0.16);
+    border-top: 1px solid rgba(23, 33, 43, 0.16);
     break-inside: avoid;
-    margin-top: 10px;
-    padding: 10px 12px;
+    margin-top: 8px;
+    padding: 8px 0 0;
   }
 
   .print-sheet-header {
     align-items: start;
+  }
+
+  .print-sheet h2,
+  .print-sheet h3,
+  .print-sheet p,
+  .print-sheet li,
+  .print-sheet strong {
+    font-family: "Arial", "Helvetica Neue", Helvetica, sans-serif;
+  }
+
+  .print-sheet h2 {
+    font-size: 18px;
+    margin: 0;
+  }
+
+  .print-sheet h3 {
+    font-size: 12px;
+    letter-spacing: 0.03em;
   }
 }
