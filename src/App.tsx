@@ -151,6 +151,7 @@ export function App() {
   const [activePreviewActivityId, setActivePreviewActivityId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isCustomizingPlan, setIsCustomizingPlan] = useState(false);
+  const [openElectiveBuckets, setOpenElectiveBuckets] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     api.getWorkspace().then(setWorkspace);
@@ -467,103 +468,117 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 1 · Den and Meeting Basics</h2>
-                  <p>Choose the den and set tonight’s planning limits. Save metadata can wait until the packet is ready.</p>
+                  <p>Choose the den, then set the meeting shape and activity limits. The form stays dense, but the groups tell the story.</p>
                 </div>
               </div>
 
-              <div className="basics-grid">
-                <label className="field-span-2">
-                  Den
-                  <select
-                    value={selectedDenId}
-                    onChange={(event) => {
-                      setSelectedDenId(event.target.value);
-                      setSelectedAdventureIds([]);
-                      setSelectedRequirementIds([]);
-                      invalidateGeneratedPlan();
-                    }}
-                  >
-                    {dens.map((den) => (
-                      <option key={den.id} value={den.id}>
-                        {den.name} ({den.leaderName})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <div className="setup-sections">
+                <section className="setup-section">
+                  <div className="setup-section-head">
+                    <span className="section-eyebrow">Meeting Basics</span>
+                    <p>Who, when, and how long tonight’s meeting needs to run.</p>
+                  </div>
+                  <div className="setup-grid setup-grid-basics">
+                    <label className="field-span-2">
+                      Den
+                      <select
+                        value={selectedDenId}
+                        onChange={(event) => {
+                          setSelectedDenId(event.target.value);
+                          setSelectedAdventureIds([]);
+                          setSelectedRequirementIds([]);
+                          invalidateGeneratedPlan();
+                        }}
+                      >
+                        {dens.map((den) => (
+                          <option key={den.id} value={den.id}>
+                            {den.name} ({den.leaderName})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label>
-                  Meeting Date
-                  <input
-                    type="date"
-                    value={request.meetingDate}
-                    onChange={(event) => {
-                      const nextDate = event.target.value;
-                      const nextMonthKey = deriveMonthKey(nextDate, monthPlan.monthKey);
-                      setRequest((current) => ({ ...current, meetingDate: nextDate }));
-                      setMonthPlan((current) => ({
-                        ...current,
-                        monthKey: nextMonthKey,
-                        monthLabel: formatMonthLabel(nextMonthKey)
-                      }));
-                      invalidateGeneratedPlan();
-                    }}
-                  />
-                </label>
+                    <label>
+                      Meeting Date
+                      <input
+                        type="date"
+                        value={request.meetingDate}
+                        onChange={(event) => {
+                          const nextDate = event.target.value;
+                          const nextMonthKey = deriveMonthKey(nextDate, monthPlan.monthKey);
+                          setRequest((current) => ({ ...current, meetingDate: nextDate }));
+                          setMonthPlan((current) => ({
+                            ...current,
+                            monthKey: nextMonthKey,
+                            monthLabel: formatMonthLabel(nextMonthKey)
+                          }));
+                          invalidateGeneratedPlan();
+                        }}
+                      />
+                    </label>
 
-                <label>
-                  Minutes
-                  <input
-                    type="number"
-                    min={30}
-                    max={120}
-                    value={request.durationMinutes}
-                    onChange={(event) => {
-                      setRequest((current) => ({ ...current, durationMinutes: Number(event.target.value) }));
-                      invalidateGeneratedPlan();
-                    }}
-                  />
-                </label>
+                    <label>
+                      Minutes
+                      <input
+                        type="number"
+                        min={30}
+                        max={120}
+                        value={request.durationMinutes}
+                        onChange={(event) => {
+                          setRequest((current) => ({ ...current, durationMinutes: Number(event.target.value) }));
+                          invalidateGeneratedPlan();
+                        }}
+                      />
+                    </label>
 
-                <label>
-                  Scouts
-                  <input
-                    type="number"
-                    min={1}
-                    max={16}
-                    value={request.scoutCount}
-                    onChange={(event) => {
-                      setRequest((current) => ({ ...current, scoutCount: Number(event.target.value) }));
-                      invalidateGeneratedPlan();
-                    }}
-                  />
-                </label>
+                    <label>
+                      Scouts
+                      <input
+                        type="number"
+                        min={1}
+                        max={16}
+                        value={request.scoutCount}
+                        onChange={(event) => {
+                          setRequest((current) => ({ ...current, scoutCount: Number(event.target.value) }));
+                          invalidateGeneratedPlan();
+                        }}
+                      />
+                    </label>
+                  </div>
+                </section>
 
-                <label>
-                  Meeting Space
-                  <select
-                    value={request.meetingSpace}
-                    onChange={(event) => {
-                      setRequest((current) => ({ ...current, meetingSpace: event.target.value as MeetingSpace }));
-                      invalidateGeneratedPlan();
-                    }}
-                  >
-                    <option value="indoor">Indoor</option>
-                    <option value="outing-with-travel">Outing with travel</option>
-                    <option value="outdoor">Outdoor</option>
-                  </select>
-                </label>
+                <section className="setup-section">
+                  <div className="setup-section-head">
+                    <span className="section-eyebrow">Activity Constraints</span>
+                    <p>Use the official activity key to steer the recommendations, not to block the planner.</p>
+                  </div>
+                  <div className="setup-grid setup-grid-constraints">
+                    <label className="field-span-2">
+                      Meeting Space
+                      <select
+                        value={request.meetingSpace}
+                        onChange={(event) => {
+                          setRequest((current) => ({ ...current, meetingSpace: event.target.value as MeetingSpace }));
+                          invalidateGeneratedPlan();
+                        }}
+                      >
+                        <option value="indoor">Indoor</option>
+                        <option value="outing-with-travel">Outing with travel</option>
+                        <option value="outdoor">Outdoor</option>
+                      </select>
+                    </label>
 
-                <div className="field-span-2 basics-cap-grid">
-                  {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, (value) =>
-                    setRequest((current) => ({ ...current, maxEnergyLevel: value }))
-                  )}
-                  {renderCapControl("Max Supply List", request.maxSupplyLevel, (value) =>
-                    setRequest((current) => ({ ...current, maxSupplyLevel: value }))
-                  )}
-                  {renderCapControl("Max Prep Time", request.maxPrepLevel, (value) =>
-                    setRequest((current) => ({ ...current, maxPrepLevel: value }))
-                  )}
-                </div>
+                    {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, (value) =>
+                      setRequest((current) => ({ ...current, maxEnergyLevel: value }))
+                    )}
+                    {renderCapControl("Max Supply List", request.maxSupplyLevel, (value) =>
+                      setRequest((current) => ({ ...current, maxSupplyLevel: value }))
+                    )}
+                    {renderCapControl("Max Prep Time", request.maxPrepLevel, (value) =>
+                      setRequest((current) => ({ ...current, maxPrepLevel: value }))
+                    )}
+                  </div>
+                </section>
               </div>
 
               {selectedDen ? (
@@ -624,22 +639,47 @@ export function App() {
                   );
                   if (!bucket.required) {
                     return (
-                      <details key={bucket.key} className="trail-card trail-card-collapsible">
-                        <summary className="trail-card-summary">
-                          <div className="trail-card-header">
-                            <div>
-                              <span className="agenda-kind">{bucket.required ? "Required Trail" : "Elective Trail"}</span>
-                              <h3>{bucket.label}</h3>
-                            </div>
+                      <article key={bucket.key} className="trail-card trail-card-collapsible">
+                        <div className="trail-card-header">
+                          <div>
+                            <span className="agenda-kind">{bucket.required ? "Required Trail" : "Elective Trail"}</span>
+                            <h3>{bucket.label}</h3>
+                          </div>
+                          <div className="trail-summary-meta">
                             {progressBucket ? (
                               <span className={`coverage-chip ${progressBucket.completedCount >= progressBucket.targetCount ? "coverage-automatic" : "coverage-uncovered"}`}>
                                 {describeProgress(progressBucket.completedCount, progressBucket.targetCount, bucket.required)}
                               </span>
                             ) : null}
+                            <button
+                              className="trail-disclosure trail-disclosure-button"
+                              type="button"
+                              onClick={() =>
+                                setOpenElectiveBuckets((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(bucket.key)) {
+                                    next.delete(bucket.key);
+                                  } else {
+                                    next.add(bucket.key);
+                                  }
+                                  return next;
+                                })
+                              }
+                            >
+                              <span aria-hidden="true">{openElectiveBuckets.has(bucket.key) ? "▴" : "▾"}</span>
+                              <span>{openElectiveBuckets.has(bucket.key) ? "Click to collapse" : "Click to expand"}</span>
+                            </button>
                           </div>
-                        </summary>
-                        {content}
-                      </details>
+                        </div>
+                        {openElectiveBuckets.has(bucket.key) ? (
+                          <>
+                            <p className="subtle-line">Elective adventures stay in the same grid so you can compare them at a glance.</p>
+                            {content}
+                          </>
+                        ) : (
+                          <p className="subtle-line">Elective adventures are collapsed to keep the trail short.</p>
+                        )}
+                      </article>
                     );
                   }
                   return (
@@ -744,11 +784,11 @@ export function App() {
                   <h2>Step 4 · Leader Packet</h2>
                   <p>Generate the packet after the den, trail selection, and requirement scope feel right. Review the proposal first, then opt into customization only if you need to adjust the packet.</p>
                 </div>
-                {plan ? (
-                  <button className="secondary-button" onClick={() => window.print()}>
-                    Print Packet
-                  </button>
-                ) : null}
+              {plan ? (
+                <button className="secondary-button" onClick={() => window.print()}>
+                  Print Packet
+                </button>
+              ) : null}
               </div>
 
               {!plan ? (
@@ -756,139 +796,41 @@ export function App() {
                   <p>Generate the packet from Step 3. Any change to basics, adventures, or requirements will clear the current packet so you can rebuild it cleanly.</p>
                 </div>
               ) : (
-                <div className="plan-stack">
-                  <div className="summary-grid">
-                    <div className="summary-card"><span>Den</span><strong>{plan.denName}</strong></div>
-                    <div className="summary-card"><span>Adventures</span><strong>{plan.adventures.map((adventure) => adventure.name).join(", ")}</strong></div>
-                    <div className="summary-card"><span>Date</span><strong>{plan.request.meetingDate || "TBD"}</strong></div>
-                  </div>
+                <div className="packet-workbench">
+                  <aside className="packet-toolbar">
+                    <section className="packet-panel">
+                      <p className="section-eyebrow">Print Preview</p>
+                      <h3>Review first</h3>
+                      <p className="packet-copy">
+                        {isCustomizingPlan
+                          ? "Customizing is on. Adjust timings or preview alternate activities if you need to."
+                          : `Ranked for ${labelMeetingSpace(plan.request.meetingSpace).toLowerCase()}, energy up to ${plan.request.maxEnergyLevel}, supplies up to ${plan.request.maxSupplyLevel}, and prep up to ${plan.request.maxPrepLevel}.`}
+                      </p>
+                      {!isCustomizingPlan ? (
+                        <button className="secondary-button" onClick={() => setIsCustomizingPlan(true)}>
+                          Customize this plan
+                        </button>
+                      ) : null}
+                    </section>
 
-                  <div className="callout">
-                    <strong>{isCustomizingPlan ? "Customization is on" : "Review first"}</strong>
-                    <p>
-                      {isCustomizingPlan
-                        ? "You can now adjust timings, edit notes, and preview alternate activities."
-                        : `This packet was ranked for ${labelMeetingSpace(plan.request.meetingSpace).toLowerCase()}, energy up to ${plan.request.maxEnergyLevel}, supplies up to ${plan.request.maxSupplyLevel}, and prep up to ${plan.request.maxPrepLevel}.`}
-                    </p>
-                    {!isCustomizingPlan ? (
-                      <button className="secondary-button" onClick={() => setIsCustomizingPlan(true)}>
-                        Customize this plan
-                      </button>
-                    ) : null}
-                  </div>
+                    <section className="packet-panel">
+                      <h3>Time budget</h3>
+                      <p className="packet-copy">
+                        Planned minutes: {plan.timeBudget.plannedMinutes} / {plan.timeBudget.targetMinutes} · Minimum likely {plan.timeBudget.minimumSuggestedMinutes} · Recommended {plan.timeBudget.recommendedMinutes}
+                      </p>
+                      <div className={`packet-budget packet-budget-${plan.timeBudget.status}`}>
+                        {timeBudgetLabel(plan.timeBudget.status)}
+                      </div>
+                      {plan.timeBudget.warnings.length ? (
+                        <ul className="packet-list">
+                          {plan.timeBudget.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                        </ul>
+                      ) : (
+                        <p className="packet-copy">The packet fits the selected meeting length with a little room to breathe.</p>
+                      )}
+                    </section>
 
-                  <div className="callout">
-                    <strong>{timeBudgetLabel(plan.timeBudget.status)}</strong>
-                    <p>
-                      Planned minutes: {plan.timeBudget.plannedMinutes} / {plan.timeBudget.targetMinutes}. Minimum likely scope: {plan.timeBudget.minimumSuggestedMinutes}. Recommended official-activity scope: {plan.timeBudget.recommendedMinutes}.
-                    </p>
-                    {plan.timeBudget.warnings.length ? (
-                      <ul>
-                        {plan.timeBudget.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                      </ul>
-                    ) : (
-                      <p>This packet fits the selected meeting length with some buffer built in.</p>
-                    )}
-                  </div>
-
-                  <div className="list-block">
-                    <h3>Materials Checklist</h3>
-                    <ul className="materials-checklist">
-                      {plan.materials.map((item) => (
-                        <li key={item}>
-                          <span className="print-checkbox" aria-hidden="true" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="agenda-list">
-                    {plan.agenda.map((item) => (
-                      <article className="agenda-card" key={item.id}>
-                        <div className="agenda-head">
-                          <div>
-                            <span className="agenda-kind">{item.kind}</span>
-                            <h3>{item.title}</h3>
-                            {item.adventureName ? <p className="subtle-line">{item.adventureName}</p> : null}
-                          </div>
-                          {isCustomizingPlan ? (
-                            <input className="minutes-input" type="number" min={5} value={item.durationMinutes} onChange={(event) => updateAgendaItem(item.id, { durationMinutes: Number(event.target.value) })} />
-                          ) : (
-                            <span className="current-pill">{item.durationMinutes} min</span>
-                          )}
-                        </div>
-                        <p>{item.description}</p>
-                        {coverageLabel(item.coverageStatus) ? <div className={`coverage-chip coverage-${item.coverageStatus}`}>{coverageLabel(item.coverageStatus)}</div> : null}
-                        {item.requirementNumber ? (
-                          <div className="agenda-requirement">
-                            <strong>Requirement {item.requirementNumber}</strong>
-                            <p>{item.requirementText}</p>
-                          </div>
-                        ) : null}
-                        {item.selectionSource ? (
-                          <div className="agenda-source-row">
-                            <span className={`coverage-chip coverage-${item.coverageStatus ?? "automatic"}`}>
-                              {item.selectionSource === "recommended"
-                                ? "Recommended activity"
-                                : item.selectionSource === "added"
-                                  ? "Leader-added requirement"
-                                  : "Swapped activity"}
-                            </span>
-                          </div>
-                        ) : null}
-                        {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (
-                          <div className="preview-meta">
-                            {describeActivityKey(activityLookup.get(item.selectedActivityId) as Activity).map((detail) => (
-                              <span key={`${item.id}-${detail}`}>{detail}</span>
-                            ))}
-                          </div>
-                        ) : null}
-                        {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (
-                          (() => {
-                            const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
-                            const materials = getActivityMaterials(selectedActivity);
-                            return materials.length ? (
-                              <div className="agenda-requirement">
-                                <strong>Materials</strong>
-                                <p>{materials.join(" · ")}</p>
-                              </div>
-                            ) : null;
-                          })()
-                        ) : null}
-                        {isCustomizingPlan ? (
-                          <textarea
-                            className="agenda-notes"
-                            rows={8}
-                            value={item.editableNotes}
-                            onChange={(event) => updateAgendaItem(item.id, { editableNotes: event.target.value })}
-                          />
-                        ) : (
-                          <p className="preview-details">{item.editableNotes}</p>
-                        )}
-                        {isCustomizingPlan && item.kind === "activity" ? (
-                          <div className="agenda-actions">
-                            <button className="secondary-button" onClick={() => { setActiveAgendaItemId(item.id); setActivePreviewActivityId(item.selectedActivityId); }}>
-                              Preview and Swap Activity
-                            </button>
-                          </div>
-                        ) : null}
-                      </article>
-                    ))}
-                  </div>
-
-                  <div className="coverage-grid">
-                    <div className="list-block">
-                      <h3>Requirement Coverage</h3>
-                      <ul>
-                        {plan.coverage.map((item) => (
-                          <li key={item.requirementId}>
-                            <strong>{item.adventureName} · Req {item.requirementNumber}:</strong> {item.reason}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="list-block">
+                    <section className="packet-panel">
                       <h3>Save to Year Plan</h3>
                       <label>
                         Year Plan Month
@@ -909,13 +851,127 @@ export function App() {
                         />
                       </label>
                       <p className="subtle-line">Month key: {deriveMonthKey(request.meetingDate, monthPlan.monthKey)}</p>
-                      <p>{plan.leaderNotes}</p>
                       <button className="secondary-button" onClick={() => void handleSave()}>
                         Save to Year Plan
                       </button>
                       {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
-                    </div>
-                  </div>
+                    </section>
+                  </aside>
+
+                  <section className="packet-canvas">
+                    <article className="packet-page">
+                      <header className="packet-page-header">
+                        <div>
+                          <span className="section-eyebrow">Packet Preview</span>
+                          <h2>{plan.denName}</h2>
+                          <p>
+                            {plan.request.meetingDate || "Date TBD"} · {plan.adventures.map((adventure) => adventure.name).join(", ")}
+                          </p>
+                        </div>
+                        <div className={`packet-budget packet-budget-${plan.timeBudget.status}`}>
+                          {timeBudgetLabel(plan.timeBudget.status)} · {plan.timeBudget.plannedMinutes}/{plan.timeBudget.targetMinutes} min
+                        </div>
+                      </header>
+
+                      <section className="packet-block">
+                        <h3>Meeting At a Glance</h3>
+                        <p>
+                          Den: {plan.denName} · Space: {labelMeetingSpace(plan.request.meetingSpace)} · Scouts: {plan.request.scoutCount}
+                        </p>
+                        <p>Tonight’s success looks like: {buildSuccessSummary(plan)}</p>
+                      </section>
+
+                      <section className="packet-columns">
+                        <div className="packet-block">
+                          <h3>Before Scouts Arrive</h3>
+                          <ul className="print-checklist">
+                            <li><span className="print-checkbox" aria-hidden="true" /> Materials out</li>
+                            <li><span className="print-checkbox" aria-hidden="true" /> Opening ready</li>
+                            <li><span className="print-checkbox" aria-hidden="true" /> First activity staged</li>
+                          </ul>
+                        </div>
+                        <div className="packet-block">
+                          <h3>Materials Checklist</h3>
+                          <ul className="print-checklist">
+                            {plan.materials.map((item) => (
+                              <li key={`packet-${item}`}>
+                                <span className="print-checkbox" aria-hidden="true" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </section>
+
+                      <section className="packet-block">
+                        <h3>Activity Overview</h3>
+                        <div className="packet-activity-list">
+                          {plan.agenda.map((item) => (
+                            <div key={`packet-activity-${item.id}`} className="packet-activity-row">
+                              <div>
+                                <strong>{item.title}</strong>
+                                <p>
+                                  {item.requirementNumber ? `Requirement ${item.requirementNumber}` : "Packet support block"}
+                                  {item.adventureName ? ` · ${item.adventureName}` : ""}
+                                </p>
+                              </div>
+                              <div>
+                                <strong>{item.durationMinutes} min</strong>
+                                <p>{shortenRequirementText(item.editableNotes || item.description, 120)}</p>
+                                {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (() => {
+                                  const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
+                                  const materials = getActivityMaterials(selectedActivity);
+                                  return (
+                                    <div className="packet-activity-meta">
+                                      <p>{describeActivityKey(selectedActivity).join(" · ")}</p>
+                                      <p>{materials.length ? `Materials: ${materials.join(" · ")}` : `Materials / setup: ${shortenRequirementText(getActivityOverview(selectedActivity), 120)}`}</p>
+                                      {item.selectionSource ? (
+                                        <span className={`coverage-chip coverage-${item.coverageStatus ?? "automatic"}`}>
+                                          {item.selectionSource === "recommended"
+                                            ? "Recommended activity"
+                                            : item.selectionSource === "added"
+                                              ? "Leader-added requirement"
+                                              : "Swapped activity"}
+                                        </span>
+                                      ) : null}
+                                      {isCustomizingPlan ? (
+                                        <button
+                                          className="text-button"
+                                          onClick={() => {
+                                            setActiveAgendaItemId(item.id);
+                                            setActivePreviewActivityId(item.selectedActivityId);
+                                          }}
+                                        >
+                                          Preview and Swap Activity
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })() : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="packet-block">
+                        <h3>If Time Runs Short</h3>
+                        <p>{buildTimeShortNote(plan)}</p>
+                      </section>
+
+                      <section className="packet-block">
+                        <h3>Quick Reflect</h3>
+                        <div className="reflect-block">
+                          <strong>What was completed?</strong>
+                          <div className="reflect-lines" />
+                          <strong>What should I log in Scoutbook later?</strong>
+                          <div className="reflect-lines" />
+                          <strong>What do I want to remember for next time?</strong>
+                          <div className="reflect-lines" />
+                        </div>
+                      </section>
+                    </article>
+                  </section>
 
                   <section className="print-sheet print-only">
                     <header className="print-sheet-header">
