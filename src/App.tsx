@@ -126,7 +126,7 @@ function splitActivityNotes(activity: Activity): string[] {
 }
 
 function getActivityMaterials(activity: Activity): string[] {
-  if (activity.materials.length > 0) {
+  if (Array.isArray(activity.materials) && activity.materials.length > 0) {
     return activity.materials;
   }
   const blocks = splitActivityNotes(activity);
