@@ -87,6 +87,10 @@ export function initDb(): void {
       source_url TEXT NOT NULL,
       summary TEXT NOT NULL,
       location TEXT NOT NULL,
+      meeting_space TEXT,
+      energy_level INTEGER,
+      supply_level INTEGER,
+      prep_level INTEGER,
       prep_minutes INTEGER,
       duration_minutes INTEGER,
       difficulty INTEGER,
@@ -124,6 +128,10 @@ export function initDb(): void {
     );
   `);
   ensureColumn("activities", "preview_details", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn("activities", "meeting_space", "TEXT");
+  ensureColumn("activities", "energy_level", "INTEGER");
+  ensureColumn("activities", "supply_level", "INTEGER");
+  ensureColumn("activities", "prep_level", "INTEGER");
   ensureColumn("meeting_plans", "den_id", "TEXT REFERENCES den_profiles(id)");
   ensureColumn("meeting_plans", "month_key", "TEXT NOT NULL DEFAULT 'unscheduled'");
   ensureColumn("meeting_plans", "month_label", "TEXT NOT NULL DEFAULT 'Unscheduled'");
@@ -196,13 +204,35 @@ function mapActivity(row: Record<string, unknown>): Activity {
     slug: String(row.slug),
     sourceUrl: String(row.source_url),
     summary: String(row.summary),
-    location: String(row.location),
-    prepMinutes: row.prep_minutes === null ? null : Number(row.prep_minutes),
+    meetingSpace: row.meeting_space ? String(row.meeting_space) as Activity["meetingSpace"] : fallbackMeetingSpace(String(row.location ?? "")),
+    energyLevel: row.energy_level === null || row.energy_level === undefined
+      ? row.difficulty === null || row.difficulty === undefined
+        ? null
+        : Number(row.difficulty)
+      : Number(row.energy_level),
+    supplyLevel: row.supply_level === null || row.supply_level === undefined ? null : Number(row.supply_level),
+    prepLevel: row.prep_level === null || row.prep_level === undefined ? null : Number(row.prep_level),
     durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
-    difficulty: row.difficulty === null ? null : Number(row.difficulty),
     notes: String(row.notes),
     previewDetails: String(row.preview_details ?? "")
   };
+}
+
+function fallbackMeetingSpace(value: string): Activity["meetingSpace"] {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("outing")) {
+    return "outing-with-travel";
+  }
+  if (normalized.includes("indoor") && normalized.includes("outdoor")) {
+    return "indoor-or-outdoor";
+  }
+  if (normalized.includes("indoor")) {
+    return "indoor";
+  }
+  if (normalized.includes("outdoor")) {
+    return "outdoor";
+  }
+  return "unknown";
 }
 
 function mapRecap(row: Record<string, unknown> | undefined): MeetingRecap | null {
@@ -324,9 +354,9 @@ export function upsertActivity(activity: Activity): void {
   db.prepare(`
     INSERT INTO activities (
       id, adventure_id, requirement_id, name, slug, source_url, summary, location,
-      prep_minutes, duration_minutes, difficulty, notes, preview_details
+      meeting_space, energy_level, supply_level, prep_level, prep_minutes, duration_minutes, difficulty, notes, preview_details
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       adventure_id = excluded.adventure_id,
       requirement_id = excluded.requirement_id,
@@ -335,6 +365,10 @@ export function upsertActivity(activity: Activity): void {
       source_url = excluded.source_url,
       summary = excluded.summary,
       location = excluded.location,
+      meeting_space = excluded.meeting_space,
+      energy_level = excluded.energy_level,
+      supply_level = excluded.supply_level,
+      prep_level = excluded.prep_level,
       prep_minutes = excluded.prep_minutes,
       duration_minutes = excluded.duration_minutes,
       difficulty = excluded.difficulty,
@@ -348,10 +382,14 @@ export function upsertActivity(activity: Activity): void {
     activity.slug,
     activity.sourceUrl,
     activity.summary,
-    activity.location,
-    activity.prepMinutes,
+    activity.meetingSpace,
+    activity.meetingSpace,
+    activity.energyLevel,
+    activity.supplyLevel,
+    activity.prepLevel,
+    activity.prepLevel,
     activity.durationMinutes,
-    activity.difficulty,
+    activity.energyLevel,
     activity.notes,
     activity.previewDetails
   );
