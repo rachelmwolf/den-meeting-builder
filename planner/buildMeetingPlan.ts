@@ -10,7 +10,8 @@ import type {
   MeetingRequest,
   Rank,
   Requirement,
-  SelectionSource
+  SelectionSource,
+  TimeBudgetSummary
 } from "../shared/types.js";
 import { chunkedDuration, labelMeetingSpace, makeId } from "../shared/utils.js";
 
@@ -246,6 +247,56 @@ function describeMeetingShape(request: MeetingRequest): string {
   return `${labelMeetingSpace(request.meetingSpace)} meeting, energy up to ${request.maxEnergyLevel}, supplies up to ${request.maxSupplyLevel}, prep up to ${request.maxPrepLevel}.`;
 }
 
+function buildTimeBudget(
+  request: MeetingRequest,
+  chosenActivities: Activity[],
+  transitionCount: number,
+  includesReflection: boolean,
+  agenda: MeetingAgendaItem[]
+): TimeBudgetSummary {
+  const fixedMinutes = 20 + transitionCount * 5 + (includesReflection ? 5 : 0);
+  const minimumSuggestedMinutes = fixedMinutes + chosenActivities.length * 10;
+  const recommendedMinutes =
+    fixedMinutes + chosenActivities.reduce((total, activity) => total + (activity.durationMinutes ?? 15), 0);
+  const plannedMinutes = agenda.reduce((total, item) => total + item.durationMinutes, 0);
+  const delta = plannedMinutes - request.durationMinutes;
+  const warnings: string[] = [];
+
+  if (plannedMinutes > request.durationMinutes) {
+    warnings.push(
+      `This packet is scheduled for ${plannedMinutes} minutes, which is ${delta} minute${delta === 1 ? "" : "s"} over your ${request.durationMinutes}-minute meeting.`
+    );
+  }
+  if (minimumSuggestedMinutes > request.durationMinutes) {
+    warnings.push(
+      `Even a compressed version of these requirements needs about ${minimumSuggestedMinutes} minutes. Consider splitting this meeting across two dates or trimming requirements.`
+    );
+  } else if (recommendedMinutes > request.durationMinutes) {
+    warnings.push(
+      `The selected scope usually needs about ${recommendedMinutes} minutes with the official activities. This meeting can work, but it will be tight unless you trim transitions or simplify delivery.`
+    );
+  } else if (request.durationMinutes - plannedMinutes <= 5) {
+    warnings.push("This plan fits, but it leaves almost no extra buffer for late starts, transitions, or den discussion.");
+  }
+
+  let status: TimeBudgetSummary["status"] = "fits";
+  if (plannedMinutes > request.durationMinutes || minimumSuggestedMinutes > request.durationMinutes) {
+    status = "over";
+  } else if (recommendedMinutes > request.durationMinutes || request.durationMinutes - plannedMinutes <= 5) {
+    status = "tight";
+  }
+
+  return {
+    targetMinutes: request.durationMinutes,
+    plannedMinutes,
+    minimumSuggestedMinutes,
+    recommendedMinutes,
+    activityCount: chosenActivities.length,
+    status,
+    warnings
+  };
+}
+
 function buildPlan(
   den: DenProfile,
   rank: Rank,
@@ -339,6 +390,7 @@ function buildPlan(
     editableNotes: "Invite each scout to share one thing they learned or enjoyed."
   });
 
+  const timeBudget = buildTimeBudget(request, chosenActivities, transitionCount, uncovered.length > 0, agenda);
   const prepNotes = [
     `Review the official adventure pages for ${adventureNames.join(", ")} before the meeting.`,
     `Confirm space and setup for a ${labelMeetingSpace(request.meetingSpace).toLowerCase()} meeting.`,
@@ -364,6 +416,7 @@ function buildPlan(
     coverage,
     activityLibrary: allActivities,
     leaderNotes: buildLeaderNotes(coverage),
+    timeBudget,
     printSections: [
       "Opening and gathering",
       "Main activity flow",
