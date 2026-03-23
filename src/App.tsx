@@ -494,7 +494,7 @@ export function App() {
                     <p>Who, when, and how long tonight’s meeting needs to run.</p>
                   </div>
                   <div className="setup-grid setup-grid-basics">
-                    <label className="field-span-2">
+                    <label>
                       Den
                       <select
                         value={selectedDenId}
@@ -509,56 +509,57 @@ export function App() {
                           <option key={den.id} value={den.id}>
                             {den.name} ({den.leaderName})
                           </option>
-                        ))}
+                          ))}
                       </select>
                     </label>
+                    <div className="setup-basics-mini">
+                      <label>
+                        Meeting Date
+                        <input
+                          type="date"
+                          value={request.meetingDate}
+                          onChange={(event) => {
+                            const nextDate = event.target.value;
+                            const nextMonthKey = deriveMonthKey(nextDate, monthPlan.monthKey);
+                            setRequest((current) => ({ ...current, meetingDate: nextDate }));
+                            setMonthPlan((current) => ({
+                              ...current,
+                              monthKey: nextMonthKey,
+                              monthLabel: formatMonthLabel(nextMonthKey)
+                            }));
+                            invalidateGeneratedPlan();
+                          }}
+                        />
+                      </label>
 
-                    <label>
-                      Meeting Date
-                      <input
-                        type="date"
-                        value={request.meetingDate}
-                        onChange={(event) => {
-                          const nextDate = event.target.value;
-                          const nextMonthKey = deriveMonthKey(nextDate, monthPlan.monthKey);
-                          setRequest((current) => ({ ...current, meetingDate: nextDate }));
-                          setMonthPlan((current) => ({
-                            ...current,
-                            monthKey: nextMonthKey,
-                            monthLabel: formatMonthLabel(nextMonthKey)
-                          }));
-                          invalidateGeneratedPlan();
-                        }}
-                      />
-                    </label>
+                      <label>
+                        Minutes
+                        <input
+                          type="number"
+                          min={30}
+                          max={120}
+                          value={request.durationMinutes}
+                          onChange={(event) => {
+                            setRequest((current) => ({ ...current, durationMinutes: Number(event.target.value) }));
+                            invalidateGeneratedPlan();
+                          }}
+                        />
+                      </label>
 
-                    <label>
-                      Minutes
-                      <input
-                        type="number"
-                        min={30}
-                        max={120}
-                        value={request.durationMinutes}
-                        onChange={(event) => {
-                          setRequest((current) => ({ ...current, durationMinutes: Number(event.target.value) }));
-                          invalidateGeneratedPlan();
-                        }}
-                      />
-                    </label>
-
-                    <label>
-                      Scouts
-                      <input
-                        type="number"
-                        min={1}
-                        max={16}
-                        value={request.scoutCount}
-                        onChange={(event) => {
-                          setRequest((current) => ({ ...current, scoutCount: Number(event.target.value) }));
-                          invalidateGeneratedPlan();
-                        }}
-                      />
-                    </label>
+                      <label>
+                        Scouts
+                        <input
+                          type="number"
+                          min={1}
+                          max={16}
+                          value={request.scoutCount}
+                          onChange={(event) => {
+                            setRequest((current) => ({ ...current, scoutCount: Number(event.target.value) }));
+                            invalidateGeneratedPlan();
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 </section>
 
@@ -588,13 +589,13 @@ export function App() {
                     </label>
 
                     <div className="setup-caps">
-                      {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, "1 is calm and low-energy. 5 is active and fast-paced.", (value) =>
+                      {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, "Energy: 1 Very Low Energy - talking, listening, sharing, and sitting. 5 Very High Energy - walking, moving, long distances, or running.", (value) =>
                         setRequest((current) => ({ ...current, maxEnergyLevel: value }))
                       )}
-                      {renderCapControl("Max Supply List", request.maxSupplyLevel, "1 means very few supplies. 5 means a larger supply load.", (value) =>
+                      {renderCapControl("Max Supply List", request.maxSupplyLevel, "Supply List: 1 None - no supplies are needed. 5 Custom - items for the activity are custom or uncommon.", (value) =>
                         setRequest((current) => ({ ...current, maxSupplyLevel: value }))
                       )}
-                      {renderCapControl("Max Prep Time", request.maxPrepLevel, "1 is almost no prep. 5 is a heavier setup load for the leader.", (value) =>
+                      {renderCapControl("Max Prep Time", request.maxPrepLevel, "Prep Time: 1 Minimal prep. 5 Something needs to be done a week or more ahead of time.", (value) =>
                         setRequest((current) => ({ ...current, maxPrepLevel: value }))
                       )}
                     </div>
