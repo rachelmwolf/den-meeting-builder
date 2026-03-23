@@ -293,6 +293,11 @@ label textarea {
   padding: 18px;
 }
 
+.agenda-card textarea,
+.detail-notes {
+  min-height: 140px;
+}
+
 .agenda-head {
   display: flex;
   justify-content: space-between;
@@ -342,6 +347,22 @@ label textarea {
 
 .agenda-actions {
   margin-top: 12px;
+}
+
+.agenda-requirement {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(236, 241, 239, 0.75);
+}
+
+.agenda-requirement p,
+.agenda-source-row {
+  margin: 6px 0 0;
+}
+
+.agenda-notes {
+  min-height: 160px;
 }
 
 .checkbox-row {
@@ -443,6 +464,24 @@ label textarea {
 
 .option-card span {
   color: #566772;
+}
+
+.option-card-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.option-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(31, 78, 70, 0.08);
+  color: #1f4e46 !important;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .option-card-active {
