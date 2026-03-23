@@ -27,6 +27,9 @@ function looksLikeMaterialText(value: string): boolean {
 }
 
 function collectMaterialHints(activity: Activity): string[] {
+  if (activity.materials.length > 0) {
+    return activity.materials;
+  }
   const blocks = [...splitContentBlocks(activity.notes), ...splitContentBlocks(activity.previewDetails)];
   const hints: string[] = [];
   for (const block of blocks) {
