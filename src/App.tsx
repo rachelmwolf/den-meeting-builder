@@ -625,7 +625,6 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 2 · Choose Adventures From the Trail</h2>
-                  <p>Select one or more adventures for this meeting.</p>
                 </div>
               </div>
 
@@ -849,7 +848,7 @@ export function App() {
                       )}
                     </section>
 
-                    <section className="packet-panel">
+                    <section className="packet-panel packet-panel-save">
                       <h3>Save to Year Plan</h3>
                       <label>
                         Year Plan Month
