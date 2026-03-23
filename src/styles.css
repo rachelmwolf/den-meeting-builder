@@ -187,6 +187,24 @@ label textarea {
   gap: 12px;
 }
 
+.basics-grid,
+.basics-cap-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.basics-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.basics-cap-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.field-span-2 {
+  grid-column: span 2;
+}
+
 .primary-button,
 .secondary-button {
   border: 0;
@@ -228,11 +246,17 @@ label textarea {
 
 .summary-card span,
 .agenda-kind {
-  display: inline-block;
+  display: block;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   font-size: 0.72rem;
   color: #566772;
+}
+
+.summary-progress {
+  display: block;
+  margin-top: 10px;
+  line-height: 1.2;
 }
 
 .trail-grid {
@@ -247,9 +271,8 @@ label textarea {
 }
 
 .trail-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 10px;
   align-items: start;
 }
 
@@ -271,6 +294,10 @@ label textarea {
 .trail-option-active {
   outline: 2px solid rgba(31, 78, 70, 0.22);
   background: rgba(255, 255, 255, 0.95);
+}
+
+.trail-options {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
 .trail-option p,
@@ -302,7 +329,7 @@ label textarea {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  align-items: center;
+  align-items: start;
 }
 
 .minutes-input {
@@ -363,6 +390,22 @@ label textarea {
 
 .agenda-notes {
   min-height: 160px;
+}
+
+.materials-checklist,
+.print-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.materials-checklist li,
+.print-checklist li {
+  display: flex;
+  gap: 10px;
+  align-items: start;
 }
 
 .checkbox-row {
@@ -545,13 +588,201 @@ label textarea {
   grid-template-columns: repeat(2, max-content);
 }
 
+.print-only {
+  display: none;
+}
+
+.print-checkbox {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid rgba(23, 33, 43, 0.5);
+  border-radius: 3px;
+  flex: 0 0 16px;
+  margin-top: 2px;
+}
+
+.print-sheet {
+  margin-top: 10px;
+  color: #17212b;
+}
+
+.print-sheet-header,
+.print-columns,
+.print-activity-row {
+  display: grid;
+  gap: 14px;
+}
+
+.print-sheet-header,
+.print-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.print-section {
+  border: 1px solid rgba(23, 33, 43, 0.12);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: white;
+}
+
+.print-section h3 {
+  margin: 0 0 10px;
+}
+
+.print-budget {
+  justify-self: end;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 700;
+}
+
+.print-budget-fits {
+  background: rgba(24, 111, 90, 0.12);
+  color: #19624d;
+}
+
+.print-budget-tight,
+.print-budget-over {
+  background: rgba(216, 110, 61, 0.14);
+  color: #9c4c25;
+}
+
+.print-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.print-activity-row {
+  grid-template-columns: minmax(0, 220px) 1fr;
+  border-top: 1px solid rgba(23, 33, 43, 0.1);
+  padding-top: 10px;
+}
+
+.print-activity-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.print-activity-row p {
+  margin: 4px 0 0;
+}
+
+.reflect-block {
+  display: grid;
+  gap: 10px;
+}
+
+.reflect-lines {
+  min-height: 66px;
+  border-bottom: 1px solid rgba(23, 33, 43, 0.2);
+  background:
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgba(23, 33, 43, 0.14) calc(100% - 1px)) 0 0 / 100% 24px repeat-y;
+}
+
 @media (max-width: 1024px) {
   .wizard-layout,
   .drawer-layout,
+  .basics-grid,
+  .basics-cap-grid,
   .inline-grid,
   .summary-grid,
+  .print-sheet-header,
+  .print-columns,
+  .print-activity-row,
   .wizard-actions,
   .stepper {
     grid-template-columns: 1fr;
+  }
+
+  .field-span-2 {
+    grid-column: auto;
+  }
+}
+
+@media print {
+  :root {
+    background: white;
+  }
+
+  body {
+    background: white;
+  }
+
+  .hero,
+  .stepper,
+  .sidebar-stack,
+  .panel-wide,
+  .wizard-actions,
+  .agenda-actions,
+  .drawer-backdrop,
+  .secondary-button,
+  .primary-button,
+  .wizard-inline-actions {
+    display: none !important;
+  }
+
+  .page-shell {
+    max-width: none;
+    padding: 0;
+  }
+
+  .wizard-layout {
+    display: block;
+    margin: 0;
+  }
+
+  .panel,
+  .summary-card,
+  .agenda-card,
+  .year-plan-card,
+  .callout,
+  .list-block {
+    background: white;
+    box-shadow: none;
+    border: 0;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .panel-large,
+  .step-panel,
+  .plan-stack {
+    min-height: auto;
+    display: block;
+    gap: 0;
+  }
+
+  .summary-grid,
+  .callout,
+  .agenda-list,
+  .coverage-grid,
+  .list-block,
+  .panel-header > div > p,
+  .preview-details,
+  .content-status-copy {
+    display: none !important;
+  }
+
+  .panel-header {
+    margin-bottom: 0;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  .print-sheet {
+    margin: 0;
+  }
+
+  .print-section {
+    border: 1px solid rgba(23, 33, 43, 0.16);
+    break-inside: avoid;
+    margin-top: 10px;
+    padding: 10px 12px;
+  }
+
+  .print-sheet-header {
+    align-items: start;
   }
 }
