@@ -11,10 +11,11 @@ function mapActivity(row: Record<string, unknown>): Activity {
     slug: String(row.slug),
     sourceUrl: String(row.source_url),
     summary: String(row.summary),
-    location: String(row.location),
-    prepMinutes: row.prep_minutes === null ? null : Number(row.prep_minutes),
+    meetingSpace: row.meeting_space ? String(row.meeting_space) as Activity["meetingSpace"] : "unknown",
+    energyLevel: row.energy_level === null ? null : Number(row.energy_level),
+    supplyLevel: row.supply_level === null ? null : Number(row.supply_level),
+    prepLevel: row.prep_level === null ? null : Number(row.prep_level),
     durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
-    difficulty: row.difficulty === null ? null : Number(row.difficulty),
     notes: String(row.notes),
     previewDetails: String(row.preview_details ?? "")
   };
