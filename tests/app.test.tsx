@@ -112,6 +112,15 @@ function buildGeneratedPlan(): MeetingPlan {
     ],
     activityLibrary: demoContent.activities,
     leaderNotes: "Leader guidance",
+    timeBudget: {
+      targetMinutes: 50,
+      plannedMinutes: 50,
+      minimumSuggestedMinutes: 35,
+      recommendedMinutes: 40,
+      activityCount: 1,
+      status: "fits",
+      warnings: []
+    },
     generatedAt: new Date().toISOString(),
     printSections: ["Opening and gathering", "Main activity flow"],
     parentUpdate: {
@@ -202,7 +211,16 @@ describe("App", () => {
         }
       ],
       leaderNotes:
-        "This plan covers each selected requirement with an official linked activity. Confirm completion based on actual meeting delivery."
+        "This plan covers each selected requirement with an official linked activity. Confirm completion based on actual meeting delivery.",
+      timeBudget: {
+        targetMinutes: 50,
+        plannedMinutes: 65,
+        minimumSuggestedMinutes: 45,
+        recommendedMinutes: 55,
+        activityCount: 2,
+        status: "over",
+        warnings: ["This packet is scheduled for 65 minutes, which is 15 minutes over your 50-minute meeting."]
+      }
     };
 
     fetchMock.mockImplementation((input: string | URL, _init?: RequestInit) => {
@@ -317,6 +335,7 @@ describe("App", () => {
     expect(await screen.findByText("Adventure Trail Progress")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("50")).toBeInTheDocument();
     expect(await screen.findByLabelText("Meeting Space")).toHaveValue("indoor");
+    expect((await screen.findAllByText(/Maximum allowed: 3\/5/i)).length).toBeGreaterThan(0);
   });
 
   test("walks through the wizard, reviews a packet first, and then swaps an activity", async () => {
@@ -333,6 +352,7 @@ describe("App", () => {
     expect((await screen.findAllByText(/Bobcat Lion, Fun on the Run/i)).length).toBeGreaterThan(0);
     expect(await screen.findByText("Customize this plan")).toBeInTheDocument();
     expect(screen.queryByText("Preview and Swap Activity")).not.toBeInTheDocument();
+    expect(await screen.findByText(/Planned minutes: 50 \/ 50/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Customize this plan"));
 
@@ -365,5 +385,17 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/plans/recap", expect.objectContaining({ method: "POST" }))
     );
     expect(await screen.findByDisplayValue(/Family follow-up: Wear class A next week\./i)).toBeInTheDocument();
+  });
+
+  test("shows a pre-generation time warning when the selected scope is too large", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
+    fireEvent.click(await screen.findByLabelText(/Fun on the Run/i));
+    fireEvent.click(await screen.findByText("Refine Requirements"));
+
+    expect(await screen.findByText(/likely too large for 50 minutes/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Minimum likely time:/i)).toBeInTheDocument();
   });
 });
