@@ -425,14 +425,18 @@ label textarea {
 .trail-card {
   background: rgba(247, 244, 237, 0.82);
   border-radius: 18px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid rgba(28, 36, 38, 0.06);
 }
 
 .trail-card-header {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   align-items: start;
+}
+
+.trail-card-header h3 {
+  margin: 0;
 }
 
 .trail-option {
@@ -441,7 +445,7 @@ label textarea {
   gap: 10px;
   align-items: start;
   border-radius: 16px;
-  padding: 7px 10px;
+  padding: 6px 8px;
   background: rgba(255, 255, 255, 0.7);
 }
 
@@ -457,8 +461,8 @@ label textarea {
 
 .trail-options {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  padding-top: 8px;
-  gap: 8px;
+  padding-top: 6px;
+  gap: 6px;
 }
 
 .trail-card-elective {
