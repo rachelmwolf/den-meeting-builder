@@ -9,6 +9,7 @@ import type {
   MeetingSpace,
   MeetingAgendaItem,
   MeetingPlan,
+  MeetingRequest,
   PackWorkspace,
   Requirement,
   SavedMeetingPlan,
@@ -67,6 +68,49 @@ function describeActivityKey(activity: Activity): string[] {
   if (activity.prepLevel) details.push(`Prep ${activity.prepLevel}/5`);
   if (activity.durationMinutes) details.push(`${activity.durationMinutes} min`);
   return details;
+}
+
+function iconForMeetingSpace(space: Activity["meetingSpace"]): string {
+  if (space === "indoor") return "🏠";
+  if (space === "outing-with-travel") return "🧭";
+  return "🌲";
+}
+
+type ActivityFitRequest = Pick<MeetingRequest, "meetingSpace" | "maxEnergyLevel" | "maxSupplyLevel" | "maxPrepLevel">;
+
+function buildActivityKeyIndicators(activity: Activity): Array<{ icon: string; label: string }> {
+  return [
+    { icon: iconForMeetingSpace(activity.meetingSpace), label: labelMeetingSpace(activity.meetingSpace) },
+    { icon: "⚡", label: activity.energyLevel === null ? "Energy ?" : `${activity.energyLevel}/5` },
+    { icon: "🧰", label: activity.supplyLevel === null ? "Supplies ?" : `${activity.supplyLevel}/5` },
+    { icon: "⏳", label: activity.prepLevel === null ? "Prep ?" : `${activity.prepLevel}/5` }
+  ];
+}
+
+function scoreActivityFit(activity: Activity, request: ActivityFitRequest): number {
+  const meetingSpaceScore =
+    activity.meetingSpace === request.meetingSpace
+      ? 0
+      : activity.meetingSpace === "indoor-or-outdoor"
+        ? 1
+        : request.meetingSpace === "outing-with-travel" && activity.meetingSpace === "outdoor"
+          ? 2
+          : request.meetingSpace === "outdoor" && activity.meetingSpace === "outing-with-travel"
+            ? 2
+            : 3;
+  const energyScore = activity.energyLevel === null ? 1 : Math.max(0, activity.energyLevel - request.maxEnergyLevel);
+  const supplyScore = activity.supplyLevel === null ? 1 : Math.max(0, activity.supplyLevel - request.maxSupplyLevel);
+  const prepScore = activity.prepLevel === null ? 1 : Math.max(0, activity.prepLevel - request.maxPrepLevel);
+  return meetingSpaceScore * 100 + energyScore * 10 + supplyScore * 10 + prepScore;
+}
+
+function buildActivityFitSummary(activity: Activity, request: ActivityFitRequest): string {
+  return [
+    labelMeetingSpace(activity.meetingSpace),
+    activity.energyLevel === null ? "Energy ?" : `Energy ${activity.energyLevel}/5`,
+    activity.supplyLevel === null ? "Supplies ?" : `Supplies ${activity.supplyLevel}/5`,
+    activity.prepLevel === null ? "Prep ?" : `Prep ${activity.prepLevel}/5`
+  ].join(" · ");
 }
 
 function splitActivityNotes(activity: Activity): string[] {
@@ -259,25 +303,34 @@ export function App() {
   }, [activeAgendaItem, activityLookup]);
   const previewOptionCards = useMemo(() => {
     if (!activeAgendaItem) return [];
+    const chooserRequest: ActivityFitRequest = plan?.request
+      ? {
+          meetingSpace: plan.request.meetingSpace,
+          maxEnergyLevel: plan.request.maxEnergyLevel,
+          maxSupplyLevel: plan.request.maxSupplyLevel,
+          maxPrepLevel: plan.request.maxPrepLevel
+        }
+      : {
+          meetingSpace: request.meetingSpace,
+          maxEnergyLevel: request.maxEnergyLevel,
+          maxSupplyLevel: request.maxSupplyLevel,
+          maxPrepLevel: request.maxPrepLevel
+        };
 
+    const primaryRequirementId = activeAgendaItem.primaryRequirementId;
     return previewOptions
       .map((activity) => {
         const requirement = activity.requirementId ? requirementLookup.get(activity.requirementId) ?? null : null;
         const isCurrent = activity.id === activeAgendaItem.selectedActivityId;
-        const sameRequirement = Boolean(
-          activeAgendaItem.primaryRequirementId && activity.requirementId === activeAgendaItem.primaryRequirementId
-        );
+        const matchesPrimaryRequirement = Boolean(primaryRequirementId && activity.requirementId === primaryRequirementId);
         const sameAdventure = activity.adventureId === activeAgendaItem.adventureId;
-        let priority = 3;
-        let badge = "Adds another requirement";
+        const section = matchesPrimaryRequirement ? "matching" : "other";
+        let badge = "Other official activity";
         if (isCurrent) {
-          priority = 0;
           badge = "Current choice";
-        } else if (sameRequirement) {
-          priority = 1;
-          badge = "Recommended for this requirement";
+        } else if (matchesPrimaryRequirement) {
+          badge = "Requirement match";
         } else if (sameAdventure) {
-          priority = 2;
           badge = "Same adventure";
         }
 
@@ -285,17 +338,29 @@ export function App() {
           activity,
           requirement,
           isCurrent,
+          matchesPrimaryRequirement,
+          sameAdventure,
+          section,
           badge,
-          priority
+          fitScore: scoreActivityFit(activity, chooserRequest),
+          fitSummary: buildActivityFitSummary(activity, chooserRequest)
         };
       })
       .sort((left, right) => {
-        if (left.priority !== right.priority) {
-          return left.priority - right.priority;
+        if (left.section !== right.section) {
+          return left.section === "matching" ? -1 : 1;
+        }
+        if (left.isCurrent !== right.isCurrent) {
+          return left.isCurrent ? -1 : 1;
+        }
+        if (left.fitScore !== right.fitScore) {
+          return left.fitScore - right.fitScore;
         }
         return left.activity.name.localeCompare(right.activity.name);
       });
-  }, [activeAgendaItem, previewOptions, requirementLookup]);
+  }, [activeAgendaItem, plan?.request, previewOptions, requirementLookup, request]);
+  const matchingOptionCards = previewOptionCards.filter((card) => card.section === "matching");
+  const otherOptionCards = previewOptionCards.filter((card) => card.section === "other");
   const activePreviewActivity =
     (activePreviewActivityId ? activityLookup.get(activePreviewActivityId) : null) ?? previewOptions[0] ?? null;
   const trailProgress = yearPlan?.trailProgress ?? trailData?.progress ?? null;
@@ -1170,34 +1235,84 @@ export function App() {
               <div>
                 <p className="eyebrow">Activity Options</p>
                 <h2>{activeAgendaItem.title}</h2>
+                {activeAgendaItem.primaryRequirementId ? (
+                  <p className="drawer-subtitle">
+                    Requirement {requirementLookup.get(activeAgendaItem.primaryRequirementId)?.requirementNumber ?? "?"}
+                    {requirementLookup.get(activeAgendaItem.primaryRequirementId)?.text
+                      ? ` · ${shortenRequirementText(requirementLookup.get(activeAgendaItem.primaryRequirementId)?.text ?? "", 96)}`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
               <button className="close-button" onClick={() => setActiveAgendaItemId(null)}>Close</button>
             </div>
             <div className="drawer-layout">
               <aside className="options-list">
-                {previewOptionCards.length ? (
-                  previewOptionCards.map(({ activity, requirement, badge }) => (
-                    <button key={activity.id} className={`option-card ${activity.id === activePreviewActivity.id ? "option-card-active" : ""}`} onClick={() => setActivePreviewActivityId(activity.id)}>
-                      <div className="option-card-topline">
-                        <strong>{activity.name}</strong>
-                        <span className="option-badge">{badge}</span>
-                      </div>
-                      <span>{describeActivityKey(activity).join(" · ")}</span>
-                      {activity.adventureId !== activeAgendaItem.adventureId && activeAgendaItem.adventureName ? (
-                        <span>{plan?.adventures.find((adventure) => adventure.id === activity.adventureId)?.name ?? "Other adventure"}</span>
-                      ) : null}
-                      {requirement ? (
-                        <span>
-                          Requirement {requirement.requirementNumber}: {shortenRequirementText(requirement.text, 72)}
-                        </span>
-                      ) : (
-                        <span>Requirement mapping unavailable</span>
-                      )}
-                    </button>
-                  ))
-                ) : (
-                  <div className="empty-state compact-empty">No alternate official activities are available for this meeting scope.</div>
-                )}
+                <section className="options-group">
+                  <div className="options-group-head">
+                    <h3>Matches this requirement</h3>
+                    <p>These activities directly support the selected requirement.</p>
+                  </div>
+                  <div className="options-grid">
+                    {(matchingOptionCards.length ? matchingOptionCards : previewOptionCards).length ? (
+                      (matchingOptionCards.length ? matchingOptionCards : previewOptionCards).map(({ activity, requirement, badge, fitSummary }) => (
+                        <button key={activity.id} className={`option-card ${activity.id === activePreviewActivity.id ? "option-card-active" : ""}`} onClick={() => setActivePreviewActivityId(activity.id)}>
+                          <span className="option-card-kicker">
+                            Requirement {requirement?.requirementNumber ?? "?"}
+                          </span>
+                          <strong className="option-card-title">{activity.name}</strong>
+                          <p className="option-card-requirement">
+                            {requirement ? shortenRequirementText(requirement.text, 78) : "Requirement mapping unavailable"}
+                          </p>
+                          <p className="option-card-fit">{fitSummary}</p>
+                          <div className="option-key-grid" aria-hidden="true">
+                            {buildActivityKeyIndicators(activity).map((indicator, index) => (
+                              <span key={`${activity.id}-${index}`} className="option-key">
+                                <span className="option-key-icon">{indicator.icon}</span>
+                                <span>{indicator.label}</span>
+                              </span>
+                            ))}
+                          </div>
+                          <span className="option-badge">{badge}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="empty-state compact-empty">No matching official activities were found for this requirement.</div>
+                    )}
+                  </div>
+                </section>
+
+                {otherOptionCards.length ? (
+                  <section className="options-group">
+                    <div className="options-group-head">
+                      <h3>Other official activities</h3>
+                      <p>These remain available if you want to stretch, trim, or swap the plan.</p>
+                    </div>
+                    <div className="options-grid">
+                      {otherOptionCards.map(({ activity, requirement, badge, fitSummary }) => (
+                        <button key={activity.id} className={`option-card ${activity.id === activePreviewActivity.id ? "option-card-active" : ""}`} onClick={() => setActivePreviewActivityId(activity.id)}>
+                          <span className="option-card-kicker">
+                            Requirement {requirement?.requirementNumber ?? "?"}
+                          </span>
+                          <strong className="option-card-title">{activity.name}</strong>
+                          <p className="option-card-requirement">
+                            {requirement ? shortenRequirementText(requirement.text, 78) : "Requirement mapping unavailable"}
+                          </p>
+                          <p className="option-card-fit">{fitSummary}</p>
+                          <div className="option-key-grid" aria-hidden="true">
+                            {buildActivityKeyIndicators(activity).map((indicator, index) => (
+                              <span key={`${activity.id}-${index}`} className="option-key">
+                                <span className="option-key-icon">{indicator.icon}</span>
+                                <span>{indicator.label}</span>
+                              </span>
+                            ))}
+                          </div>
+                          <span className="option-badge">{badge}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
               </aside>
               <section className="preview-panel">
                 <h3>{activePreviewActivity.name}</h3>
@@ -1211,8 +1326,11 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="preview-meta">
-                  {describeActivityKey(activePreviewActivity).map((detail) => (
-                    <span key={detail}>{detail}</span>
+                  {buildActivityKeyIndicators(activePreviewActivity).map((detail, index) => (
+                    <span key={`${activePreviewActivity.id}-${index}`}>
+                      <span className="option-key-icon">{detail.icon}</span>
+                      {detail.label}
+                    </span>
                   ))}
                 </div>
                 <div className="agenda-requirement">
