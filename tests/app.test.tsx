@@ -330,7 +330,7 @@ describe("App", () => {
   test("renders the wizard and trail progress", async () => {
     render(<App />);
 
-    expect(await screen.findByText(/Guide the setup\. Focus the packet\./i)).toBeInTheDocument();
+    expect(await screen.findByText("Den Leader Planning Workspace")).toBeInTheDocument();
     expect(await screen.findByText("Step 1 · Den and Meeting Basics")).toBeInTheDocument();
     expect(await screen.findByText("Adventure Trail Progress")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("50")).toBeInTheDocument();
