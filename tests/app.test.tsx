@@ -240,7 +240,15 @@ describe("App", () => {
                   refreshedAt: "2026-03-22T10:00:00.000Z"
                 }
               ],
-              lastRefreshedAt: "2026-03-22T10:00:00.000Z"
+              lastRefreshedAt: "2026-03-22T10:00:00.000Z",
+              activityFieldCoverage: {
+                totalActivities: 10,
+                meetingSpaceCount: 10,
+                energyLevelCount: 10,
+                supplyLevelCount: 10,
+                prepLevelCount: 10,
+                materialsCount: 10
+              }
             })
           )
         );
@@ -332,6 +340,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Den Leader Planning Workspace")).toBeInTheDocument();
     expect(await screen.findByText("Step 1 · Den and Meeting Basics")).toBeInTheDocument();
+    expect(await screen.findByText("Curriculum Status")).toBeInTheDocument();
     expect(await screen.findByText("Adventure Trail Progress")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("50")).toBeInTheDocument();
     expect(await screen.findByLabelText("Meeting Space")).toHaveValue("indoor");
