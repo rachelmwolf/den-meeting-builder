@@ -656,7 +656,6 @@ export function App() {
                             />
                             <div>
                               <strong>{adventure.name}</strong>
-                              <p>{adventure.kind === "required" ? "Required adventure" : "Elective adventure"}</p>
                             </div>
                           </label>
                         ))
@@ -671,11 +670,6 @@ export function App() {
                         <div>
                           <h3>{bucket.label}</h3>
                         </div>
-                        {progressBucket ? (
-                          <span className={`coverage-chip ${progressBucket.completedCount >= progressBucket.targetCount ? "coverage-automatic" : "coverage-uncovered"}`}>
-                            {describeProgress(progressBucket.completedCount, progressBucket.targetCount, bucket.required)}
-                          </span>
-                        ) : null}
                       </div>
                       {content}
                     </article>
@@ -702,11 +696,10 @@ export function App() {
                                       checked={selectedAdventureIds.includes(adventure.id)}
                                       onChange={() => toggleAdventure(adventure.id)}
                                     />
-                                    <div>
-                                      <strong>{adventure.name}</strong>
-                                      <p>{adventure.kind === "required" ? "Required adventure" : "Elective adventure"}</p>
-                                    </div>
-                                  </label>
+                            <div>
+                              <strong>{adventure.name}</strong>
+                            </div>
+                          </label>
                                 ))
                               ) : (
                                 <div className="empty-state compact-empty">No adventures imported for this bucket yet.</div>
@@ -720,11 +713,6 @@ export function App() {
                                   <h3>{bucket.label}</h3>
                                 </div>
                                 <div className="trail-summary-meta">
-                                  {progressBucket ? (
-                                    <span className={`coverage-chip ${progressBucket.completedCount >= progressBucket.targetCount ? "coverage-automatic" : "coverage-uncovered"}`}>
-                                      {describeProgress(progressBucket.completedCount, progressBucket.targetCount, bucket.required)}
-                                    </span>
-                                  ) : null}
                                   <button
                                     className="trail-disclosure trail-disclosure-button"
                                     type="button"
