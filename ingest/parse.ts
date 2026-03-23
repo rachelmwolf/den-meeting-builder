@@ -143,6 +143,16 @@ function parseOfficialKeyLevel(raw: string, label: string): number | null {
   return numbers.length ? numbers[numbers.length - 1] : null;
 }
 
+function parseOfficialKeyLevelByLabels(raw: string, labels: string[]): number | null {
+  for (const label of labels) {
+    const value = parseOfficialKeyLevel(raw, label);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function parseOfficialKeyLevelFromPage($: cheerio.CheerioAPI, label: string): number | null {
   const nodes = $("p, li, div, span").toArray();
   for (const node of nodes) {
@@ -416,8 +426,9 @@ export function parseActivityDetailPage(html: string, activity: Activity): Activ
       parseOfficialKeyLevel(rawText, "Supply List for this Activity") ??
       activity.supplyLevel,
     prepLevel:
+      parseOfficialKeyLevelFromPage($, "Prep Time for this Activity") ??
       parseOfficialKeyLevelFromPage($, "Preparation Time for this Activity") ??
-      parseOfficialKeyLevel(rawText, "Preparation Time for this Activity") ??
+      parseOfficialKeyLevelByLabels(rawText, ["Prep Time for this Activity", "Preparation Time for this Activity"]) ??
       activity.prepLevel,
     materials: materials.length ? materials : activity.materials,
     notes: previewDetails || activity.notes,
