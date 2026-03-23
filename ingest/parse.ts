@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import type { Activity, Adventure, AdventureBundle, Rank, Requirement } from "../shared/types.js";
+import type { Activity, ActivityMeetingSpace, Adventure, AdventureBundle, Rank, Requirement } from "../shared/types.js";
 import { makeId, slugify } from "../shared/utils.js";
 import { BASE_URL } from "./constants.js";
 
@@ -116,6 +116,48 @@ function parseDifficulty(text: string): number | null {
   return firstNumber ? Number(firstNumber[1]) : null;
 }
 
+function normalizeMeetingSpace(text: string): ActivityMeetingSpace {
+  const normalized = normalizeText(text).toLowerCase();
+  if (normalized.includes("outing with travel")) {
+    return "outing-with-travel";
+  }
+  if (normalized.includes("indoor") && normalized.includes("outdoor")) {
+    return "indoor-or-outdoor";
+  }
+  if (normalized.includes("indoor")) {
+    return "indoor";
+  }
+  if (normalized.includes("outdoor")) {
+    return "outdoor";
+  }
+  return "unknown";
+}
+
+function parseOfficialKeyLevel(raw: string, label: string): number | null {
+  const pattern = new RegExp(`${label}([\\s\\S]{0,220})`, "i");
+  const match = raw.match(pattern);
+  if (!match) {
+    return null;
+  }
+  const numbers = Array.from(match[1].matchAll(/\b([1-5])\b/g)).map((entry) => Number(entry[1]));
+  return numbers.length ? numbers[numbers.length - 1] : null;
+}
+
+function parseOfficialKeyLevelFromPage($: cheerio.CheerioAPI, label: string): number | null {
+  const nodes = $("p, li, div, span").toArray();
+  for (const node of nodes) {
+    const text = normalizeText($(node).text());
+    if (!text || !new RegExp(label, "i").test(text)) {
+      continue;
+    }
+    const numbers = Array.from(text.matchAll(/\b([1-5])\b/g)).map((entry) => Number(entry[1]));
+    if (numbers.length) {
+      return numbers[numbers.length - 1];
+    }
+  }
+  return null;
+}
+
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -151,6 +193,7 @@ function isStopHeading(text: string): boolean {
 function shouldSkipContentText(text: string): boolean {
   return (
     /image$/i.test(text) ||
+    /^(energy level of cub scouts|supply list for this activity|preparation time for this activity)\b/i.test(text) ||
     (/:\s*$/.test(text) && text.length < 40) ||
     (/^(lion|tiger|wolf|bear|webelos|arrow of light)\s+[–-]/i.test(text) &&
       /\b(indoor|outdoor|either)\b/i.test(text) &&
@@ -177,7 +220,7 @@ function collectPreviewText($: cheerio.CheerioAPI, selector: string, limit: numb
 
 function extractCardTexts(article: cheerio.Cheerio<any>, $: cheerio.CheerioAPI): string[] {
   return article
-    .find(".elementor-icon-box-title, .elementor-icon-box-description, .elementor-heading-title, p, span")
+    .find(".elementor-icon-box-title, .elementor-icon-box-description, .elementor-heading-title, p, span, div")
     .map((_index, element) => normalizeText($(element).text()))
     .get()
     .filter(Boolean);
@@ -266,7 +309,10 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
       return;
     }
     const metaBits = extractCardTexts(article, $);
-    const location = metaBits.find((item) => /^(Indoor|Outdoor|Either)$/i.test(item)) ?? "Either";
+    const meetingSpace = normalizeMeetingSpace(
+      metaBits.find((item) => /(Indoor|Outdoor|Outing with travel|Either)/i.test(item)) ?? ""
+    );
+    const numericMeta = metaBits.map((item) => parseDifficulty(item)).filter((value): value is number => value !== null);
     const requirement = currentRequirementNumber ? requirementByNumber.get(currentRequirementNumber) ?? null : null;
     activities.push({
       id: makeId(adventure.id, name),
@@ -276,10 +322,11 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
       slug: slugify(name),
       sourceUrl: absolutize(link.attr("href") ?? ""),
       summary,
-      location,
-      prepMinutes: null,
+      meetingSpace,
+      energyLevel: numericMeta[0] ?? null,
+      supplyLevel: numericMeta[1] ?? null,
+      prepLevel: numericMeta[2] ?? null,
       durationMinutes: null,
-      difficulty: null,
       notes: summary,
       previewDetails: summary
     });
@@ -335,8 +382,23 @@ export function parseActivityDetailPage(html: string, activity: Activity): Activ
   }
 
   const previewDetails = previewParts.join("\n\n").trim();
+  const rawText = cheerio.load(html).text().replace(/\s+/g, " ").trim();
+  const inferredMeetingSpace = normalizeMeetingSpace(rawText);
   return {
     ...activity,
+    meetingSpace: inferredMeetingSpace === "unknown" ? activity.meetingSpace : inferredMeetingSpace,
+    energyLevel:
+      parseOfficialKeyLevelFromPage($, "Energy Level of Cub Scouts") ??
+      parseOfficialKeyLevel(rawText, "Energy Level of Cub Scouts") ??
+      activity.energyLevel,
+    supplyLevel:
+      parseOfficialKeyLevelFromPage($, "Supply List for this Activity") ??
+      parseOfficialKeyLevel(rawText, "Supply List for this Activity") ??
+      activity.supplyLevel,
+    prepLevel:
+      parseOfficialKeyLevelFromPage($, "Preparation Time for this Activity") ??
+      parseOfficialKeyLevel(rawText, "Preparation Time for this Activity") ??
+      activity.prepLevel,
     notes: previewDetails || activity.notes,
     previewDetails: previewDetails || `${activity.summary}\n\nSee the official activity page for full instructions.`
   };
