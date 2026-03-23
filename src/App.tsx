@@ -11,7 +11,6 @@ import type {
   MeetingPlan,
   PackWorkspace,
   Requirement,
-  SaveRecapRequest,
   SavedMeetingPlan,
   YearPlan
 } from "../shared/types.js";
@@ -76,6 +75,45 @@ function timeBudgetLabel(status: MeetingPlan["timeBudget"]["status"]): string {
   return "Fits time";
 }
 
+function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split("-");
+  if (!year || !month) return monthKey;
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  if (Number.isNaN(date.getTime())) return monthKey;
+  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function deriveMonthKey(meetingDate: string, fallback: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)) {
+    return meetingDate.slice(0, 7);
+  }
+  return fallback;
+}
+
+function buildSuccessSummary(plan: MeetingPlan): string {
+  const firstRequirement = plan.coverage[0];
+  if (!firstRequirement) {
+    return "The den stays engaged, finishes the selected activity, and leaves knowing what tonight was meant to teach.";
+  }
+  return `Scouts complete ${plan.coverage.length} requirement${plan.coverage.length === 1 ? "" : "s"} with enough time to close calmly and note what still needs to be logged.`;
+}
+
+function buildTimeShortNote(plan: MeetingPlan): string {
+  if (plan.timeBudget.status === "fits") {
+    return "Keep the core requirement activity intact and use the closing reflection only if the den needs it.";
+  }
+
+  const candidate = [...plan.agenda]
+    .reverse()
+    .find((item) => item.kind === "activity" || item.kind === "transition");
+
+  if (!candidate) {
+    return "Trim transitions first and keep the requirement-linked work moving.";
+  }
+
+  return `Defer or shorten "${candidate.title}" first if the meeting runs long, then capture any unfinished requirement work in Scoutbook later.`;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
   const [contentStatus, setContentStatus] = useState<any>(null);
@@ -96,12 +134,6 @@ export function App() {
   const [activePreviewActivityId, setActivePreviewActivityId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isCustomizingPlan, setIsCustomizingPlan] = useState(false);
-  const [recap, setRecap] = useState<Omit<SaveRecapRequest, "meetingPlanId">>({
-    completedRequirementIds: [],
-    recapNotes: "",
-    familyFollowUp: "",
-    reuseNotes: ""
-  });
 
   useEffect(() => {
     api.getWorkspace().then(setWorkspace);
@@ -259,12 +291,6 @@ export function App() {
     setActiveAgendaItemId(null);
     setActivePreviewActivityId(null);
     setIsCustomizingPlan(false);
-    setRecap({
-      completedRequirementIds: [],
-      recapNotes: "",
-      familyFollowUp: "",
-      reuseNotes: ""
-    });
   }
 
   function toggleAdventure(adventureId: string): void {
@@ -306,12 +332,6 @@ export function App() {
     setPlan(nextPlan);
     setCurrentStep(4);
     setIsCustomizingPlan(false);
-    setRecap({
-      completedRequirementIds: [],
-      recapNotes: "",
-      familyFollowUp: "",
-      reuseNotes: ""
-    });
     setSaveMessage("");
   }
 
@@ -325,45 +345,19 @@ export function App() {
 
   async function handleSave(): Promise<void> {
     if (!plan || !selectedDen) return;
+    const resolvedMonthKey = deriveMonthKey(request.meetingDate, monthPlan.monthKey);
+    const resolvedMonthLabel = monthPlan.monthLabel || formatMonthLabel(resolvedMonthKey);
     await api.savePlan({
       denId: selectedDen.id,
       title: `${selectedDen.name} - ${plan.adventures.map((adventure) => adventure.name).join(" + ")}`,
       plannedDate: request.meetingDate || null,
-      monthKey: monthPlan.monthKey,
-      monthLabel: monthPlan.monthLabel,
+      monthKey: resolvedMonthKey,
+      monthLabel: resolvedMonthLabel,
       theme: monthPlan.theme,
       payload: plan
     });
     setSaveMessage("Saved to the den year plan.");
     setYearPlan(await api.getYearPlan(selectedDen.id));
-  }
-
-  async function handleSaveRecap(): Promise<void> {
-    if (!plan) return;
-    const savedRecap = await api.saveRecap({ meetingPlanId: plan.id, ...recap });
-    setPlan((current) => {
-      if (!current) return current;
-      const completedNumbers = current.coverage
-        .filter((item) => savedRecap.completedRequirementIds.includes(item.requirementId))
-        .map((item) => `${item.adventureName} requirement ${item.requirementNumber}`);
-      const completionLine = completedNumbers.length
-        ? `Completed tonight: ${completedNumbers.join(", ")}.`
-        : "We reviewed the meeting but still need leader confirmation on completed requirements.";
-      const followUpLine = savedRecap.familyFollowUp.trim()
-        ? `Family follow-up: ${savedRecap.familyFollowUp.trim()}`
-        : "No additional family follow-up is needed right now.";
-      return {
-        ...current,
-        parentUpdate: {
-          ...current.parentUpdate,
-          message: `${current.parentUpdate.message} ${completionLine} ${followUpLine}`.trim()
-        }
-      };
-    });
-    if (selectedDen) {
-      setYearPlan(await api.getYearPlan(selectedDen.id));
-    }
-    setSaveMessage("Meeting recap saved.");
   }
 
   async function handleSwap(selectedActivityId: string): Promise<void> {
@@ -456,42 +450,49 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 1 · Den and Meeting Basics</h2>
-                  <p>Choose the den, capture tonight’s activity-key preferences, and set where this packet should land in the year plan.</p>
+                  <p>Choose the den and set tonight’s planning limits. Save metadata can wait until the packet is ready.</p>
                 </div>
               </div>
 
-              <label>
-                Den
-                <select
-                  value={selectedDenId}
-                  onChange={(event) => {
-                    setSelectedDenId(event.target.value);
-                    setSelectedAdventureIds([]);
-                    setSelectedRequirementIds([]);
-                    invalidateGeneratedPlan();
-                  }}
-                >
-                  {dens.map((den) => (
-                    <option key={den.id} value={den.id}>
-                      {den.name} ({den.leaderName})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="basics-grid">
+                <label className="field-span-2">
+                  Den
+                  <select
+                    value={selectedDenId}
+                    onChange={(event) => {
+                      setSelectedDenId(event.target.value);
+                      setSelectedAdventureIds([]);
+                      setSelectedRequirementIds([]);
+                      invalidateGeneratedPlan();
+                    }}
+                  >
+                    {dens.map((den) => (
+                      <option key={den.id} value={den.id}>
+                        {den.name} ({den.leaderName})
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              {selectedDen ? (
-                <div className="callout">
-                  <strong>{selectedDen.name}</strong>
-                  <p>
-                    {selectedDen.meetingLocation} · {selectedDen.typicalMeetingDay}
-                  </p>
-                  {contentStatus?.lastRefreshedAt ? (
-                    <p>Last content refresh: {new Date(contentStatus.lastRefreshedAt).toLocaleString()}</p>
-                  ) : null}
-                </div>
-              ) : null}
+                <label>
+                  Meeting Date
+                  <input
+                    type="date"
+                    value={request.meetingDate}
+                    onChange={(event) => {
+                      const nextDate = event.target.value;
+                      const nextMonthKey = deriveMonthKey(nextDate, monthPlan.monthKey);
+                      setRequest((current) => ({ ...current, meetingDate: nextDate }));
+                      setMonthPlan((current) => ({
+                        ...current,
+                        monthKey: nextMonthKey,
+                        monthLabel: formatMonthLabel(nextMonthKey)
+                      }));
+                      invalidateGeneratedPlan();
+                    }}
+                  />
+                </label>
 
-              <div className="inline-grid">
                 <label>
                   Minutes
                   <input
@@ -505,6 +506,7 @@ export function App() {
                     }}
                   />
                 </label>
+
                 <label>
                   Scouts
                   <input
@@ -518,73 +520,46 @@ export function App() {
                     }}
                   />
                 </label>
+
+                <label>
+                  Meeting Space
+                  <select
+                    value={request.meetingSpace}
+                    onChange={(event) => {
+                      setRequest((current) => ({ ...current, meetingSpace: event.target.value as MeetingSpace }));
+                      invalidateGeneratedPlan();
+                    }}
+                  >
+                    <option value="indoor">Indoor</option>
+                    <option value="outing-with-travel">Outing with travel</option>
+                    <option value="outdoor">Outdoor</option>
+                  </select>
+                </label>
+
+                <div className="field-span-2 basics-cap-grid">
+                  {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, (value) =>
+                    setRequest((current) => ({ ...current, maxEnergyLevel: value }))
+                  )}
+                  {renderCapControl("Max Supply List", request.maxSupplyLevel, (value) =>
+                    setRequest((current) => ({ ...current, maxSupplyLevel: value }))
+                  )}
+                  {renderCapControl("Max Prep Time", request.maxPrepLevel, (value) =>
+                    setRequest((current) => ({ ...current, maxPrepLevel: value }))
+                  )}
+                </div>
               </div>
 
-              <label>
-                Meeting Space
-                <select
-                  value={request.meetingSpace}
-                  onChange={(event) => {
-                    setRequest((current) => ({ ...current, meetingSpace: event.target.value as MeetingSpace }));
-                    invalidateGeneratedPlan();
-                  }}
-                >
-                  <option value="indoor">Indoor</option>
-                  <option value="outing-with-travel">Outing with travel</option>
-                  <option value="outdoor">Outdoor</option>
-                </select>
-              </label>
-
-              <div className="inline-grid">
-                {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, (value) =>
-                  setRequest((current) => ({ ...current, maxEnergyLevel: value }))
-                )}
-                {renderCapControl("Max Supply List", request.maxSupplyLevel, (value) =>
-                  setRequest((current) => ({ ...current, maxSupplyLevel: value }))
-                )}
-              </div>
-
-              {renderCapControl("Max Prep Time", request.maxPrepLevel, (value) =>
-                setRequest((current) => ({ ...current, maxPrepLevel: value }))
-              )}
-
-              <label>
-                Meeting Date
-                <input
-                  type="date"
-                  value={request.meetingDate}
-                  onChange={(event) => {
-                    setRequest((current) => ({ ...current, meetingDate: event.target.value }));
-                    invalidateGeneratedPlan();
-                  }}
-                />
-              </label>
-
-              <label>
-                Leader Notes
-                <textarea
-                  rows={4}
-                  value={request.notes}
-                  onChange={(event) => {
-                    setRequest((current) => ({ ...current, notes: event.target.value }));
-                    invalidateGeneratedPlan();
-                  }}
-                  placeholder="What makes this meeting different this week?"
-                />
-              </label>
-
-              <label>
-                Year Plan Month
-                <input value={monthPlan.monthLabel} onChange={(event) => setMonthPlan((current) => ({ ...current, monthLabel: event.target.value }))} />
-              </label>
-              <label>
-                Month Key
-                <input value={monthPlan.monthKey} onChange={(event) => setMonthPlan((current) => ({ ...current, monthKey: event.target.value }))} />
-              </label>
-              <label>
-                Theme
-                <input value={monthPlan.theme} onChange={(event) => setMonthPlan((current) => ({ ...current, theme: event.target.value }))} />
-              </label>
+              {selectedDen ? (
+                <div className="callout">
+                  <strong>{selectedDen.name}</strong>
+                  <p>
+                    {selectedDen.meetingLocation} · {selectedDen.typicalMeetingDay}
+                  </p>
+                  {contentStatus?.lastRefreshedAt ? (
+                    <p>Last content refresh: {new Date(contentStatus.lastRefreshedAt).toLocaleString()}</p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="wizard-actions">
                 <button className="primary-button" disabled={!selectedDen} onClick={() => setCurrentStep(2)}>
@@ -715,8 +690,8 @@ export function App() {
                 <button className="secondary-button" onClick={() => setCurrentStep(2)}>
                   Back
                 </button>
-                <button className="primary-button" disabled={selectedRequirementIds.length === 0} onClick={() => setCurrentStep(4)}>
-                  Continue to Leader Packet
+                <button className="primary-button" disabled={selectedRequirementIds.length === 0} onClick={() => void handleGenerate()}>
+                  Generate Leader Packet
                 </button>
               </div>
             </div>
@@ -738,10 +713,7 @@ export function App() {
 
               {!plan ? (
                 <div className="empty-state">
-                  <p>Ready to build the packet for {selectedAdventures.map((adventure) => adventure.name).join(", ")}.</p>
-                  <button className="primary-button" onClick={() => void handleGenerate()}>
-                    Generate Leader Packet
-                  </button>
+                  <p>Generate the packet from Step 3. Any change to basics, adventures, or requirements will clear the current packet so you can rebuild it cleanly.</p>
                 </div>
               ) : (
                 <div className="plan-stack">
@@ -780,13 +752,15 @@ export function App() {
                   </div>
 
                   <div className="list-block">
-                    <h3>Printable Packet Includes</h3>
-                    <ul>{plan.printSections.map((section) => <li key={section}>{section}</li>)}</ul>
-                  </div>
-
-                  <div className="list-block">
-                    <h3>Materials</h3>
-                    <ul>{plan.materials.map((item) => <li key={item}>{item}</li>)}</ul>
+                    <h3>Materials Checklist</h3>
+                    <ul className="materials-checklist">
+                      {plan.materials.map((item) => (
+                        <li key={item}>
+                          <span className="print-checkbox" aria-hidden="true" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
                   <div className="agenda-list">
@@ -863,7 +837,26 @@ export function App() {
                       </ul>
                     </div>
                     <div className="list-block">
-                      <h3>Leader Guidance</h3>
+                      <h3>Save to Year Plan</h3>
+                      <label>
+                        Year Plan Month
+                        <input
+                          value={monthPlan.monthLabel}
+                          onChange={(event) =>
+                            setMonthPlan((current) => ({ ...current, monthLabel: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Theme
+                        <input
+                          value={monthPlan.theme}
+                          onChange={(event) =>
+                            setMonthPlan((current) => ({ ...current, theme: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <p className="subtle-line">Month key: {deriveMonthKey(request.meetingDate, monthPlan.monthKey)}</p>
                       <p>{plan.leaderNotes}</p>
                       <button className="secondary-button" onClick={() => void handleSave()}>
                         Save to Year Plan
@@ -872,49 +865,92 @@ export function App() {
                     </div>
                   </div>
 
-                  <div className="coverage-grid">
-                    <div className="list-block">
-                      <h3>Meeting Recap</h3>
-                      {plan.coverage.map((item) => (
-                        <label key={item.requirementId} className="checkbox-row">
-                          <input
-                            type="checkbox"
-                            checked={recap.completedRequirementIds.includes(item.requirementId)}
-                            onChange={(event) =>
-                              setRecap((current) => ({
-                                ...current,
-                                completedRequirementIds: event.target.checked
-                                  ? [...current.completedRequirementIds, item.requirementId]
-                                  : current.completedRequirementIds.filter((id) => id !== item.requirementId)
-                              }))
-                            }
-                          />
-                          {item.adventureName} requirement {item.requirementNumber} completed
-                        </label>
-                      ))}
-                      <label>
-                        Recap Notes
-                        <textarea className="detail-notes" rows={8} value={recap.recapNotes} onChange={(event) => setRecap((current) => ({ ...current, recapNotes: event.target.value }))} />
-                      </label>
-                      <label>
-                        Family Follow-up
-                        <textarea className="detail-notes" rows={8} value={recap.familyFollowUp} onChange={(event) => setRecap((current) => ({ ...current, familyFollowUp: event.target.value }))} />
-                      </label>
-                      <label>
-                        Reuse Notes for Next Year
-                        <textarea className="detail-notes" rows={8} value={recap.reuseNotes} onChange={(event) => setRecap((current) => ({ ...current, reuseNotes: event.target.value }))} />
-                      </label>
-                      <button className="secondary-button" onClick={() => void handleSaveRecap()}>
-                        Save Meeting Recap
-                      </button>
-                    </div>
+                  <section className="print-sheet print-only">
+                    <header className="print-sheet-header">
+                      <div>
+                        <h2>{plan.denName} Leader Packet</h2>
+                        <p>
+                          {plan.request.meetingDate || "Date TBD"} · {plan.adventures.map((adventure) => adventure.name).join(", ")}
+                        </p>
+                      </div>
+                      <div className={`print-budget print-budget-${plan.timeBudget.status}`}>
+                        {timeBudgetLabel(plan.timeBudget.status)} · {plan.timeBudget.plannedMinutes}/{plan.timeBudget.targetMinutes} min
+                      </div>
+                    </header>
 
-                    <div className="list-block">
-                      <h3>Parent Update Template</h3>
-                      <p><strong>{plan.parentUpdate.subject}</strong></p>
-                      <textarea className="detail-notes" rows={16} value={plan.parentUpdate.message} readOnly />
-                    </div>
-                  </div>
+                    <section className="print-section">
+                      <h3>Meeting At a Glance</h3>
+                      <p>
+                        Den: {plan.denName} · Space: {labelMeetingSpace(plan.request.meetingSpace)} · Scouts: {plan.request.scoutCount}
+                      </p>
+                      <p>
+                        Tonight’s success looks like: {buildSuccessSummary(plan)}
+                      </p>
+                    </section>
+
+                    <section className="print-columns">
+                      <div className="print-section">
+                        <h3>Before Scouts Arrive</h3>
+                        <ul className="print-checklist">
+                          <li><span className="print-checkbox" aria-hidden="true" /> Materials out</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Opening ready</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> First activity staged</li>
+                        </ul>
+                      </div>
+                      <div className="print-section">
+                        <h3>Materials Checklist</h3>
+                        <ul className="print-checklist">
+                          {plan.materials.map((item) => (
+                            <li key={`print-${item}`}>
+                              <span className="print-checkbox" aria-hidden="true" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </section>
+
+                    <section className="print-section">
+                      <h3>Activity Overview</h3>
+                      <div className="print-activity-list">
+                        {plan.agenda.map((item) => (
+                          <div key={`print-activity-${item.id}`} className="print-activity-row">
+                            <div>
+                              <strong>{item.title}</strong>
+                              <p>
+                                {item.requirementNumber ? `Requirement ${item.requirementNumber}` : "Packet support block"}
+                                {item.adventureName ? ` · ${item.adventureName}` : ""}
+                              </p>
+                            </div>
+                            <div>
+                              <strong>{item.durationMinutes} min</strong>
+                              <p>{shortenRequirementText(item.editableNotes || item.description, 120)}</p>
+                              {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (
+                                <p>{describeActivityKey(activityLookup.get(item.selectedActivityId) as Activity).join(" · ")}</p>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="print-section">
+                      <h3>If Time Runs Short</h3>
+                      <p>{buildTimeShortNote(plan)}</p>
+                    </section>
+
+                    <section className="print-section">
+                      <h3>Quick Reflect</h3>
+                      <div className="reflect-block">
+                        <strong>What was completed?</strong>
+                        <div className="reflect-lines" />
+                        <strong>What should I log in Scoutbook later?</strong>
+                        <div className="reflect-lines" />
+                        <strong>What do I want to remember for next time?</strong>
+                        <div className="reflect-lines" />
+                      </div>
+                    </section>
+                  </section>
 
                   <div className="wizard-actions">
                     <button className="secondary-button" onClick={() => setCurrentStep(3)}>
@@ -950,7 +986,7 @@ export function App() {
               {trailProgress?.buckets.map((bucket) => (
                 <div className="summary-card" key={bucket.key}>
                   <span>{bucket.label}</span>
-                  <strong>{describeProgress(bucket.completedCount, bucket.targetCount, bucket.required)}</strong>
+                  <strong className="summary-progress">{describeProgress(bucket.completedCount, bucket.targetCount, bucket.required)}</strong>
                 </div>
               )) ?? <div className="empty-state compact-empty">Select a den to see trail progress.</div>}
             </div>
