@@ -53,3 +53,19 @@ export function normalizeAdventureTrailBucket(
   }
   return "electives";
 }
+
+export function labelMeetingSpace(space: string): string {
+  if (space === "indoor") {
+    return "Indoor";
+  }
+  if (space === "outing-with-travel") {
+    return "Outing with travel";
+  }
+  if (space === "outdoor") {
+    return "Outdoor";
+  }
+  if (space === "indoor-or-outdoor") {
+    return "Indoor or Outdoor";
+  }
+  return "Meeting space flexible";
+}
