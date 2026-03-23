@@ -247,7 +247,8 @@ label textarea {
 }
 
 .setup-grid-basics {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  gap: 14px;
 }
 
 .setup-grid-constraints {
@@ -257,6 +258,12 @@ label textarea {
 
 .field-span-2 {
   grid-column: span 2;
+}
+
+.setup-basics-mini {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .setup-caps {
@@ -300,6 +307,10 @@ label textarea {
   font-weight: 700;
   cursor: help;
   flex: 0 0 auto;
+}
+
+.setup-section label {
+  gap: 8px;
 }
 
 .primary-button,
