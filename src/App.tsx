@@ -222,11 +222,17 @@ export function App() {
     api.getContentStatus().then(setContentStatus).catch(() => setContentStatus(null));
     api.listDens().then((nextDens) => {
       setDens(nextDens);
-      if (nextDens[0]) {
-        setSelectedDenId(nextDens[0].id);
-      }
     });
   }, []);
+
+  useEffect(() => {
+    if (!dens.length) {
+      return;
+    }
+    if (!selectedDenId || !dens.some((den) => den.id === selectedDenId)) {
+      setSelectedDenId(dens[0].id);
+    }
+  }, [dens, selectedDenId]);
 
   useEffect(() => {
     if (!selectedDenId) {
@@ -271,7 +277,8 @@ export function App() {
     });
   }, [selectedAdventureIds, selectedDenId]);
 
-  const selectedDen = dens.find((den) => den.id === selectedDenId) ?? null;
+  const selectedDen = dens.find((den) => den.id === selectedDenId) ?? dens[0] ?? null;
+  const selectedDenValue = selectedDen?.id ?? selectedDenId;
   const allTrailAdventures = useMemo(
     () => trailData?.buckets.flatMap((bucket) => bucket.adventures) ?? [],
     [trailData]
@@ -375,9 +382,10 @@ export function App() {
     (activePreviewActivityId ? activityLookup.get(activePreviewActivityId) : null) ?? previewOptions[0] ?? null;
   const trailProgress = yearPlan?.trailProgress ?? trailData?.progress ?? null;
   const contentRankNames = contentStatus?.importedRanks.map((rank) => rank.rankName).join(", ") ?? "";
-  const curriculumCoverageSummary = contentStatus
-    ? contentStatus.activityFieldCoverage.totalActivities > 0
-      ? `Space ${contentStatus.activityFieldCoverage.meetingSpaceCount}/${contentStatus.activityFieldCoverage.totalActivities} · Energy ${contentStatus.activityFieldCoverage.energyLevelCount}/${contentStatus.activityFieldCoverage.totalActivities} · Supplies ${contentStatus.activityFieldCoverage.supplyLevelCount}/${contentStatus.activityFieldCoverage.totalActivities} · Prep ${contentStatus.activityFieldCoverage.prepLevelCount}/${contentStatus.activityFieldCoverage.totalActivities}`
+  const activityFieldCoverage = contentStatus?.activityFieldCoverage ?? null;
+  const curriculumCoverageSummary = activityFieldCoverage
+    ? activityFieldCoverage.totalActivities > 0
+      ? `Space ${activityFieldCoverage.meetingSpaceCount}/${activityFieldCoverage.totalActivities} · Energy ${activityFieldCoverage.energyLevelCount}/${activityFieldCoverage.totalActivities} · Supplies ${activityFieldCoverage.supplyLevelCount}/${activityFieldCoverage.totalActivities} · Prep ${activityFieldCoverage.prepLevelCount}/${activityFieldCoverage.totalActivities}`
       : "No imported activities yet."
     : "";
   const selectedRequirementCount = selectedRequirementIds.length;
@@ -585,7 +593,7 @@ export function App() {
                     <label>
                       Den
                       <select
-                        value={selectedDenId}
+                        value={selectedDenValue}
                         onChange={(event) => {
                           setSelectedDenId(event.target.value);
                           setSelectedAdventureIds([]);
@@ -1203,14 +1211,16 @@ export function App() {
               <div className="status-grid">
                 <div className="summary-card">
                   <span>Activity coverage</span>
-                  <strong>{contentStatus.activityFieldCoverage.totalActivities} activities · {curriculumCoverageSummary}</strong>
+                  <strong>{activityFieldCoverage ? `${activityFieldCoverage.totalActivities} activities · ${curriculumCoverageSummary}` : "Not available yet."}</strong>
                 </div>
                 <div className="summary-card">
                   <span>Materials extracted</span>
                   <strong>
-                    {contentStatus.activityFieldCoverage.totalActivities > 0
-                      ? `${contentStatus.activityFieldCoverage.materialsCount}/${contentStatus.activityFieldCoverage.totalActivities}`
-                      : String(contentStatus.activityFieldCoverage.materialsCount)}
+                    {activityFieldCoverage
+                      ? activityFieldCoverage.totalActivities > 0
+                        ? `${activityFieldCoverage.materialsCount}/${activityFieldCoverage.totalActivities}`
+                        : String(activityFieldCoverage.materialsCount)
+                      : "Not available yet"}
                   </strong>
                 </div>
               </div>
