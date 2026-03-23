@@ -1,5 +1,6 @@
 import type {
   Activity,
+  ActivityMeetingSpace,
   AdventureBundle,
   CoverageItem,
   CoverageStatus,
@@ -11,7 +12,7 @@ import type {
   Requirement,
   SelectionSource
 } from "../shared/types.js";
-import { chunkedDuration, makeId } from "../shared/utils.js";
+import { chunkedDuration, labelMeetingSpace, makeId } from "../shared/utils.js";
 
 type RequirementSelection = {
   adventureId: string;
@@ -22,19 +23,73 @@ type RequirementSelection = {
   coverageStatus: CoverageStatus;
 };
 
+function scoreMeetingSpace(
+  activitySpace: ActivityMeetingSpace,
+  requestedSpace: MeetingRequest["meetingSpace"]
+): { score: number; reason: string } {
+  if (activitySpace === requestedSpace) {
+    return { score: 0, reason: `matched ${labelMeetingSpace(requestedSpace).toLowerCase()}` };
+  }
+  if (activitySpace === "indoor-or-outdoor") {
+    return { score: 1, reason: "works in either indoor or outdoor space" };
+  }
+  if (requestedSpace === "outdoor" && activitySpace === "outing-with-travel") {
+    return { score: 2, reason: "supports travel-based outdoor planning" };
+  }
+  if (requestedSpace === "outing-with-travel" && activitySpace === "outdoor") {
+    return { score: 2, reason: "keeps the meeting outside with lighter travel needs" };
+  }
+  return { score: 4, reason: `does not fully match the ${labelMeetingSpace(requestedSpace).toLowerCase()} preference` };
+}
+
+function scoreMaxPreference(value: number | null, maxAllowed: number, label: string): { score: number; reason: string } {
+  if (value === null) {
+    return { score: 2, reason: `${label} is not listed on the official activity card` };
+  }
+  if (value <= maxAllowed) {
+    return { score: 0, reason: `${label} ${value}/${maxAllowed} stays within your preference` };
+  }
+  return { score: value - maxAllowed + 1, reason: `${label} ${value}/${maxAllowed} is above your preferred limit` };
+}
+
+function buildSelectionReason(activity: Activity, request: MeetingRequest): string {
+  const reasons = [
+    scoreMeetingSpace(activity.meetingSpace, request.meetingSpace).reason,
+    scoreMaxPreference(activity.energyLevel, request.maxEnergyLevel, "energy").reason,
+    scoreMaxPreference(activity.supplyLevel, request.maxSupplyLevel, "supplies").reason,
+    scoreMaxPreference(activity.prepLevel, request.maxPrepLevel, "prep").reason
+  ];
+  return reasons[0]
+    ? `Chosen because it ${reasons.join(", ")}.`
+    : "Chosen as the best fit among the official linked activities.";
+}
+
 function chooseRecommendedActivity(
   requirement: Requirement,
   activities: Activity[],
-  environment: MeetingRequest["environment"]
+  request: MeetingRequest
 ): Activity | null {
   const requirementActivities = activities.filter((activity) => activity.requirementId === requirement.id);
-  const compatible = requirementActivities.filter((activity) => {
-    if (environment === "either") {
-      return true;
-    }
-    return activity.location.toLowerCase().includes(environment);
-  });
-  return compatible[0] ?? requirementActivities[0] ?? null;
+  return (
+    requirementActivities
+      .slice()
+      .sort((left, right) => {
+        const leftScore =
+          scoreMeetingSpace(left.meetingSpace, request.meetingSpace).score +
+          scoreMaxPreference(left.energyLevel, request.maxEnergyLevel, "energy").score +
+          scoreMaxPreference(left.supplyLevel, request.maxSupplyLevel, "supplies").score +
+          scoreMaxPreference(left.prepLevel, request.maxPrepLevel, "prep").score;
+        const rightScore =
+          scoreMeetingSpace(right.meetingSpace, request.meetingSpace).score +
+          scoreMaxPreference(right.energyLevel, request.maxEnergyLevel, "energy").score +
+          scoreMaxPreference(right.supplyLevel, request.maxSupplyLevel, "supplies").score +
+          scoreMaxPreference(right.prepLevel, request.maxPrepLevel, "prep").score;
+        if (leftScore !== rightScore) {
+          return leftScore - rightScore;
+        }
+        return left.name.localeCompare(right.name);
+      })[0] ?? null
+  );
 }
 
 function inferCoverageStatus(requirement: Requirement, activity: Activity | null): CoverageStatus {
@@ -61,7 +116,7 @@ function buildSelections(
           ? bundles
               .flatMap((candidateBundle) => candidateBundle.activities)
               .find((candidate) => candidate.id === overrideActivityId) ?? null
-          : chooseRecommendedActivity(requirement, bundle.activities, request.environment);
+          : chooseRecommendedActivity(requirement, bundle.activities, request);
 
         return {
           adventureId: bundle.adventure.id,
@@ -133,7 +188,7 @@ function buildActivityAgendaItems(
       kind: "activity",
       title: activity.name,
       durationMinutes: activityDurations[index] ?? 10,
-      description: activity.summary,
+      description: `${activity.summary} ${buildSelectionReason(activity, request)}`.trim(),
       adventureId: selection.adventureId,
       adventureName: selection.adventureName,
       requirementIds: [selection.requirement.id],
@@ -148,7 +203,7 @@ function buildActivityAgendaItems(
       addedFromSelection: selection.selectionSource === "added",
       editableNotes:
         activity.notes ||
-        `Use the official activity card for ${activity.name} and adjust delivery for ${request.scoutCount} scouts.`
+        `Use the official activity card for ${activity.name} and adjust delivery for ${request.scoutCount} scouts. ${buildSelectionReason(activity, request)}`
     });
 
     if (index < filteredSelections.length - 1) {
@@ -185,6 +240,10 @@ function buildLeaderNotes(coverage: CoverageItem[]): string {
     return "Do not mark uncovered requirements complete until you review the official requirement text and choose a supporting activity.";
   }
   return "This plan covers each selected requirement with an official linked activity. Confirm completion based on actual meeting delivery.";
+}
+
+function describeMeetingShape(request: MeetingRequest): string {
+  return `${labelMeetingSpace(request.meetingSpace)} meeting, energy up to ${request.maxEnergyLevel}, supplies up to ${request.maxSupplyLevel}, prep up to ${request.maxPrepLevel}.`;
 }
 
 function buildPlan(
@@ -282,7 +341,8 @@ function buildPlan(
 
   const prepNotes = [
     `Review the official adventure pages for ${adventureNames.join(", ")} before the meeting.`,
-    `Confirm space and setup for a ${request.environment} meeting.`,
+    `Confirm space and setup for a ${labelMeetingSpace(request.meetingSpace).toLowerCase()} meeting.`,
+    `Use the official activity key as a guide: ${describeMeetingShape(request)}`,
     `Prepare materials for ${chosenActivities.length || 1} main activity block(s).`
   ];
   if (request.notes.trim()) {
@@ -315,7 +375,7 @@ function buildPlan(
       subject: `${den.name}: ${adventureNames.join(" + ")} meeting update`,
       message: [
         `Tonight we will be working on ${adventureNames.join(" and ")}.`,
-        `This meeting is planned for ${request.environment}. Please dress accordingly.`,
+        `This meeting is planned for ${labelMeetingSpace(request.meetingSpace).toLowerCase()}. Please dress accordingly.`,
         `We will focus on ${coverage.map((item) => `${item.adventureName} requirement ${item.requirementNumber}`).join(", ")}.`,
         `Materials to have ready: ${materials.join(", ")}.`,
         request.notes.trim() ? `Leader note for families: ${request.notes.trim()}` : "We'll share any follow-up after the meeting."
