@@ -345,7 +345,6 @@ describe("App", () => {
     fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
     fireEvent.click(await screen.findByLabelText(/Fun on the Run/i));
     fireEvent.click(await screen.findByText("Refine Requirements"));
-    fireEvent.click(await screen.findByText("Continue to Leader Packet"));
     fireEvent.click(await screen.findByText("Generate Leader Packet"));
 
     expect(await screen.findByText("Leader Packet")).toBeInTheDocument();
@@ -365,26 +364,44 @@ describe("App", () => {
     expect((await screen.findAllByText(/Energy 3\/5/i)).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("Use This Activity"));
 
-    expect(await screen.findByLabelText(/Fun on the Run requirement 1 completed/i)).toBeInTheDocument();
+    expect(await screen.findByText("Leader-added requirement")).toBeInTheDocument();
+    expect((await screen.findAllByText("Animal Warmups")).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith("/api/plans/swap", expect.objectContaining({ method: "POST" }));
   });
 
-  test("saves recap data and folds follow-up into the parent update", async () => {
+  test("moves year-plan metadata to step 4 and removes recap from the packet view", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
     fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
     fireEvent.click(await screen.findByText("Refine Requirements"));
-    fireEvent.click(await screen.findByText("Continue to Leader Packet"));
     fireEvent.click(await screen.findByText("Generate Leader Packet"));
-    fireEvent.click(await screen.findByLabelText(/Bobcat Lion requirement 1 completed/i));
-    fireEvent.change(screen.getByLabelText("Family Follow-up"), { target: { value: "Wear class A next week." } });
-    fireEvent.click(screen.getByText("Save Meeting Recap"));
+
+    expect(screen.queryByText("Meeting Recap")).not.toBeInTheDocument();
+    expect(screen.queryByText("Parent Update Template")).not.toBeInTheDocument();
+    expect((await screen.findAllByText("Save to Year Plan")).length).toBeGreaterThan(0);
+    expect(await screen.findByDisplayValue("September 2026")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Kickoff and den culture")).toBeInTheDocument();
+  });
+
+  test("step 1 keeps only planning inputs and step 3 generates the packet directly", async () => {
+    render(<App />);
+
+    expect(screen.queryByText("Leader Notes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Year Plan Month")).not.toBeInTheDocument();
+    expect(screen.queryByText("Month Key")).not.toBeInTheDocument();
+    expect(screen.queryByText("Theme")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
+    fireEvent.click(await screen.findByText("Refine Requirements"));
+    fireEvent.click(await screen.findByText("Generate Leader Packet"));
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/plans/recap", expect.objectContaining({ method: "POST" }))
+      expect(fetchMock).toHaveBeenCalledWith("/api/plans/generate", expect.objectContaining({ method: "POST" }))
     );
-    expect(await screen.findByDisplayValue(/Family follow-up: Wear class A next week\./i)).toBeInTheDocument();
+    expect(await screen.findByText("Leader Packet")).toBeInTheDocument();
+    expect((await screen.findAllByText("Materials Checklist")).length).toBeGreaterThan(0);
   });
 
   test("shows a pre-generation time warning when the selected scope is too large", async () => {
