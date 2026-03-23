@@ -15,6 +15,7 @@
     "refresh:rank": "tsx ingest/cli.ts rank",
     "ingest:adventure": "tsx ingest/cli.ts adventure",
     "repair:previews": "tsx ingest/repairPreviews.ts",
+    "repair:curriculum": "tsx ingest/repairPreviews.ts",
     "seed:demo": "tsx ingest/seedDemo.ts"
   },
   "dependencies": {
