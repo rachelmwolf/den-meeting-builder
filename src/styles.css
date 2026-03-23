@@ -660,7 +660,34 @@ label textarea {
 
 .options-list {
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  align-content: start;
+}
+
+.options-group {
+  display: grid;
+  gap: 8px;
+}
+
+.options-group-head {
+  display: grid;
+  gap: 2px;
+}
+
+.options-group-head h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.options-group-head p,
+.drawer-subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.options-grid {
+  display: grid;
+  gap: 8px;
 }
 
 .option-card {
@@ -668,26 +695,68 @@ label textarea {
   border-radius: 18px;
   border: 1px solid rgba(28, 36, 38, 0.1);
   background: white;
-  padding: 14px;
+  padding: 10px 12px;
   display: grid;
   gap: 6px;
   cursor: pointer;
 }
 
-.option-card span {
+.option-card-kicker {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(247, 244, 237, 0.86);
+  color: #7b5a28;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.option-card-title {
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.option-card-requirement,
+.option-card-fit {
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.option-key-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.option-key {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+  font-size: 0.72rem;
   color: var(--muted);
 }
 
-.option-card-topline {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: start;
+.option-key-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(247, 244, 237, 0.9);
+  font-size: 0.82rem;
 }
 
 .option-badge {
   display: inline-flex;
   flex-shrink: 0;
+  align-self: flex-start;
   padding: 4px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
