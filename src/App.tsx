@@ -70,6 +70,12 @@ function describeActivityKey(activity: Activity): string[] {
   return details;
 }
 
+function timeBudgetLabel(status: MeetingPlan["timeBudget"]["status"]): string {
+  if (status === "over") return "Over time";
+  if (status === "tight") return "Tight fit";
+  return "Fits time";
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
   const [contentStatus, setContentStatus] = useState<any>(null);
@@ -225,6 +231,27 @@ export function App() {
   const activePreviewActivity =
     (activePreviewActivityId ? activityLookup.get(activePreviewActivityId) : null) ?? previewOptions[0] ?? null;
   const trailProgress = yearPlan?.trailProgress ?? trailData?.progress ?? null;
+  const selectedRequirementCount = selectedRequirementIds.length;
+  const estimatedMinimumMinutes = useMemo(() => {
+    if (selectedRequirementCount === 0) return 0;
+    const transitionCount = Math.max(selectedRequirementCount - 1, 0);
+    return 20 + transitionCount * 5 + selectedRequirementCount * 10;
+  }, [selectedRequirementCount]);
+  const estimatedRecommendedMinutes = useMemo(() => {
+    if (selectedRequirementCount === 0) return 0;
+    const transitionCount = Math.max(selectedRequirementCount - 1, 0);
+    return 20 + transitionCount * 5 + selectedRequirementCount * 15;
+  }, [selectedRequirementCount]);
+  const preflightWarning = useMemo(() => {
+    if (selectedRequirementCount === 0) return "";
+    if (estimatedMinimumMinutes > request.durationMinutes) {
+      return `This scope is likely too large for ${request.durationMinutes} minutes. Even a compressed version is about ${estimatedMinimumMinutes} minutes.`;
+    }
+    if (estimatedRecommendedMinutes > request.durationMinutes) {
+      return `This meeting can work, but it will be tight. The selected requirements usually take about ${estimatedRecommendedMinutes} minutes.`;
+    }
+    return "";
+  }, [estimatedMinimumMinutes, estimatedRecommendedMinutes, request.durationMinutes, selectedRequirementCount]);
 
   function invalidateGeneratedPlan(): void {
     setPlan(null);
@@ -364,6 +391,30 @@ export function App() {
     4: Boolean(plan)
   };
 
+  function renderCapControl(
+    label: string,
+    value: number,
+    onChange: (value: number) => void
+  ) {
+    return (
+      <label>
+        {label}
+        <input
+          type="range"
+          min={1}
+          max={5}
+          step={1}
+          value={value}
+          onChange={(event) => {
+            onChange(Number(event.target.value));
+            invalidateGeneratedPlan();
+          }}
+        />
+        <span className="subtle-line">Maximum allowed: {value}/5</span>
+      </label>
+    );
+  }
+
   return (
     <div className="page-shell">
       <section className="hero">
@@ -485,47 +536,17 @@ export function App() {
               </label>
 
               <div className="inline-grid">
-                <label>
-                  Max Cub Scout Energy
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={request.maxEnergyLevel}
-                    onChange={(event) => {
-                      setRequest((current) => ({ ...current, maxEnergyLevel: Number(event.target.value) }));
-                      invalidateGeneratedPlan();
-                    }}
-                  />
-                </label>
-                <label>
-                  Max Supply List
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={request.maxSupplyLevel}
-                    onChange={(event) => {
-                      setRequest((current) => ({ ...current, maxSupplyLevel: Number(event.target.value) }));
-                      invalidateGeneratedPlan();
-                    }}
-                  />
-                </label>
+                {renderCapControl("Max Cub Scout Energy", request.maxEnergyLevel, (value) =>
+                  setRequest((current) => ({ ...current, maxEnergyLevel: value }))
+                )}
+                {renderCapControl("Max Supply List", request.maxSupplyLevel, (value) =>
+                  setRequest((current) => ({ ...current, maxSupplyLevel: value }))
+                )}
               </div>
 
-              <label>
-                Max Prep Time
-                <input
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={request.maxPrepLevel}
-                  onChange={(event) => {
-                    setRequest((current) => ({ ...current, maxPrepLevel: Number(event.target.value) }));
-                    invalidateGeneratedPlan();
-                  }}
-                />
-              </label>
+              {renderCapControl("Max Prep Time", request.maxPrepLevel, (value) =>
+                setRequest((current) => ({ ...current, maxPrepLevel: value }))
+              )}
 
               <label>
                 Meeting Date
@@ -650,6 +671,15 @@ export function App() {
                 <strong>Selected adventures</strong>
                 <p>{selectedAdventures.map((adventure) => adventure.name).join(", ") || "None selected yet."}</p>
               </div>
+              {selectedRequirementCount > 0 ? (
+                <div className="callout">
+                  <strong>Time estimate</strong>
+                  <p>
+                    Minimum likely time: {estimatedMinimumMinutes} min · Typical official-activity range: about {estimatedRecommendedMinutes} min
+                  </p>
+                  {preflightWarning ? <p>{preflightWarning}</p> : <p>This scope should fit the current meeting length.</p>}
+                </div>
+              ) : null}
 
               <div className="wizard-inline-actions">
                 <button className="text-button" onClick={() => setSelectedRequirementIds(requirements.map((requirement) => requirement.id))}>
@@ -733,6 +763,20 @@ export function App() {
                         Customize this plan
                       </button>
                     ) : null}
+                  </div>
+
+                  <div className="callout">
+                    <strong>{timeBudgetLabel(plan.timeBudget.status)}</strong>
+                    <p>
+                      Planned minutes: {plan.timeBudget.plannedMinutes} / {plan.timeBudget.targetMinutes}. Minimum likely scope: {plan.timeBudget.minimumSuggestedMinutes}. Recommended official-activity scope: {plan.timeBudget.recommendedMinutes}.
+                    </p>
+                    {plan.timeBudget.warnings.length ? (
+                      <ul>
+                        {plan.timeBudget.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                      </ul>
+                    ) : (
+                      <p>This packet fits the selected meeting length with some buffer built in.</p>
+                    )}
                   </div>
 
                   <div className="list-block">
