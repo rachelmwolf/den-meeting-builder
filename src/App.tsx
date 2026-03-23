@@ -51,6 +51,12 @@ function describeProgress(current: number, target: number, required: boolean): s
   return current >= target ? "Covered in year plan" : `${current}/${target} planned`;
 }
 
+function shortenRequirementText(text: string | null, maxLength = 110): string {
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength).trimEnd()}...`;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
   const [contentStatus, setContentStatus] = useState<any>(null);
@@ -163,6 +169,45 @@ export function App() {
     }
     return Array.from(deduped.values());
   }, [activeAgendaItem, activityLookup]);
+  const previewOptionCards = useMemo(() => {
+    if (!activeAgendaItem) return [];
+
+    return previewOptions
+      .map((activity) => {
+        const requirement = activity.requirementId ? requirementLookup.get(activity.requirementId) ?? null : null;
+        const isCurrent = activity.id === activeAgendaItem.selectedActivityId;
+        const sameRequirement = Boolean(
+          activeAgendaItem.primaryRequirementId && activity.requirementId === activeAgendaItem.primaryRequirementId
+        );
+        const sameAdventure = activity.adventureId === activeAgendaItem.adventureId;
+        let priority = 3;
+        let badge = "Adds another requirement";
+        if (isCurrent) {
+          priority = 0;
+          badge = "Current choice";
+        } else if (sameRequirement) {
+          priority = 1;
+          badge = "Recommended for this requirement";
+        } else if (sameAdventure) {
+          priority = 2;
+          badge = "Same adventure";
+        }
+
+        return {
+          activity,
+          requirement,
+          isCurrent,
+          badge,
+          priority
+        };
+      })
+      .sort((left, right) => {
+        if (left.priority !== right.priority) {
+          return left.priority - right.priority;
+        }
+        return left.activity.name.localeCompare(right.activity.name);
+      });
+  }, [activeAgendaItem, previewOptions, requirementLookup]);
   const activePreviewActivity =
     (activePreviewActivityId ? activityLookup.get(activePreviewActivityId) : null) ?? previewOptions[0] ?? null;
   const trailProgress = yearPlan?.trailProgress ?? trailData?.progress ?? null;
@@ -636,7 +681,29 @@ export function App() {
                         </div>
                         <p>{item.description}</p>
                         {coverageLabel(item.coverageStatus) ? <div className={`coverage-chip coverage-${item.coverageStatus}`}>{coverageLabel(item.coverageStatus)}</div> : null}
-                        <textarea rows={3} value={item.editableNotes} onChange={(event) => updateAgendaItem(item.id, { editableNotes: event.target.value })} />
+                        {item.requirementNumber ? (
+                          <div className="agenda-requirement">
+                            <strong>Requirement {item.requirementNumber}</strong>
+                            <p>{item.requirementText}</p>
+                          </div>
+                        ) : null}
+                        {item.selectionSource ? (
+                          <div className="agenda-source-row">
+                            <span className={`coverage-chip coverage-${item.coverageStatus ?? "automatic"}`}>
+                              {item.selectionSource === "recommended"
+                                ? "Recommended activity"
+                                : item.selectionSource === "added"
+                                  ? "Leader-added requirement"
+                                  : "Swapped activity"}
+                            </span>
+                          </div>
+                        ) : null}
+                        <textarea
+                          className="agenda-notes"
+                          rows={6}
+                          value={item.editableNotes}
+                          onChange={(event) => updateAgendaItem(item.id, { editableNotes: event.target.value })}
+                        />
                         {item.kind === "activity" ? (
                           <div className="agenda-actions">
                             <button className="secondary-button" onClick={() => { setActiveAgendaItemId(item.id); setActivePreviewActivityId(item.selectedActivityId); }}>
@@ -691,15 +758,15 @@ export function App() {
                       ))}
                       <label>
                         Recap Notes
-                        <textarea rows={3} value={recap.recapNotes} onChange={(event) => setRecap((current) => ({ ...current, recapNotes: event.target.value }))} />
+                        <textarea className="detail-notes" rows={5} value={recap.recapNotes} onChange={(event) => setRecap((current) => ({ ...current, recapNotes: event.target.value }))} />
                       </label>
                       <label>
                         Family Follow-up
-                        <textarea rows={3} value={recap.familyFollowUp} onChange={(event) => setRecap((current) => ({ ...current, familyFollowUp: event.target.value }))} />
+                        <textarea className="detail-notes" rows={5} value={recap.familyFollowUp} onChange={(event) => setRecap((current) => ({ ...current, familyFollowUp: event.target.value }))} />
                       </label>
                       <label>
                         Reuse Notes for Next Year
-                        <textarea rows={3} value={recap.reuseNotes} onChange={(event) => setRecap((current) => ({ ...current, reuseNotes: event.target.value }))} />
+                        <textarea className="detail-notes" rows={5} value={recap.reuseNotes} onChange={(event) => setRecap((current) => ({ ...current, reuseNotes: event.target.value }))} />
                       </label>
                       <button className="secondary-button" onClick={() => void handleSaveRecap()}>
                         Save Meeting Recap
@@ -709,7 +776,7 @@ export function App() {
                     <div className="list-block">
                       <h3>Parent Update Template</h3>
                       <p><strong>{plan.parentUpdate.subject}</strong></p>
-                      <textarea rows={8} value={plan.parentUpdate.message} readOnly />
+                      <textarea className="detail-notes" rows={12} value={plan.parentUpdate.message} readOnly />
                     </div>
                   </div>
 
@@ -792,16 +859,41 @@ export function App() {
             </div>
             <div className="drawer-layout">
               <aside className="options-list">
-                {previewOptions.map((activity) => (
-                  <button key={activity.id} className={`option-card ${activity.id === activePreviewActivity.id ? "option-card-active" : ""}`} onClick={() => setActivePreviewActivityId(activity.id)}>
-                    <strong>{activity.name}</strong>
-                    <span>{activity.location}</span>
-                  </button>
-                ))}
+                {previewOptionCards.length ? (
+                  previewOptionCards.map(({ activity, requirement, badge }) => (
+                    <button key={activity.id} className={`option-card ${activity.id === activePreviewActivity.id ? "option-card-active" : ""}`} onClick={() => setActivePreviewActivityId(activity.id)}>
+                      <div className="option-card-topline">
+                        <strong>{activity.name}</strong>
+                        <span className="option-badge">{badge}</span>
+                      </div>
+                      <span>{activity.location}</span>
+                      {activity.adventureId !== activeAgendaItem.adventureId && activeAgendaItem.adventureName ? (
+                        <span>{plan?.adventures.find((adventure) => adventure.id === activity.adventureId)?.name ?? "Other adventure"}</span>
+                      ) : null}
+                      {requirement ? (
+                        <span>
+                          Requirement {requirement.requirementNumber}: {shortenRequirementText(requirement.text, 72)}
+                        </span>
+                      ) : (
+                        <span>Requirement mapping unavailable</span>
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="empty-state compact-empty">No alternate official activities are available for this meeting scope.</div>
+                )}
               </aside>
               <section className="preview-panel">
                 <h3>{activePreviewActivity.name}</h3>
                 <p>{activePreviewActivity.summary}</p>
+                {activePreviewActivity.requirementId ? (
+                  <div className="agenda-requirement">
+                    <strong>
+                      Requirement {requirementLookup.get(activePreviewActivity.requirementId)?.requirementNumber ?? "?"}
+                    </strong>
+                    <p>{requirementLookup.get(activePreviewActivity.requirementId)?.text ?? "Requirement text unavailable."}</p>
+                  </div>
+                ) : null}
                 <div className="preview-meta">
                   <span>{activePreviewActivity.location}</span>
                   {activePreviewActivity.durationMinutes ? <span>{activePreviewActivity.durationMinutes} min</span> : null}
@@ -812,7 +904,7 @@ export function App() {
                 ((activePreviewActivity.requirementId && activePreviewActivity.requirementId !== activeAgendaItem.primaryRequirementId) ||
                   activePreviewActivity.adventureId !== activeAgendaItem.adventureId) ? (
                   <div className="review-banner">
-                    This option comes from a different requirement or adventure in the current meeting. You can use it, but requirement completion will move to leader review.
+                    This option belongs to a different requirement or adventure in the current meeting. Using it will add that requirement as its own agenda block instead of replacing the current one.
                   </div>
                 ) : null}
                 <div className="preview-actions">
