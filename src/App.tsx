@@ -823,17 +823,7 @@ export function App() {
                   <aside className="packet-toolbar">
                     <section className="packet-panel">
                       <p className="section-eyebrow">Print Preview</p>
-                      <h3>Review first</h3>
-                      <p className="packet-copy">
-                        {isCustomizingPlan
-                          ? "Customizing is on. Adjust timings or preview alternate activities if you need to."
-                          : `Ranked for ${labelMeetingSpace(plan.request.meetingSpace).toLowerCase()}, energy up to ${plan.request.maxEnergyLevel}, supplies up to ${plan.request.maxSupplyLevel}, and prep up to ${plan.request.maxPrepLevel}.`}
-                      </p>
-                      {!isCustomizingPlan ? (
-                        <button className="secondary-button" onClick={() => setIsCustomizingPlan(true)}>
-                          Customize this plan
-                        </button>
-                      ) : null}
+                      <h3>Print settings</h3>
                       <div className="packet-option-group">
                         <span className="packet-option-title">Print options</span>
                         <label className="packet-option">
@@ -867,6 +857,9 @@ export function App() {
                           Add reflection notes
                         </label>
                       </div>
+                      <button className="primary-button" onClick={() => window.print()}>
+                        Print Packet
+                      </button>
                     </section>
 
                     <section className="packet-panel">
@@ -901,6 +894,15 @@ export function App() {
                           {timeBudgetLabel(plan.timeBudget.status)} · {plan.timeBudget.plannedMinutes}/{plan.timeBudget.targetMinutes} min
                         </div>
                       </header>
+
+                      <div className="packet-meeting-actions">
+                        {!isCustomizingPlan ? (
+                          <button className="secondary-button" onClick={() => setIsCustomizingPlan(true)}>
+                            Customize this plan
+                          </button>
+                        ) : null}
+                        {isCustomizingPlan ? <p className="subtle-line">Customizing is on. Adjust timings or preview alternate activities if you need to.</p> : null}
+                      </div>
 
                       <section className="packet-block">
                         <h3>Meeting At a Glance</h3>
@@ -1096,12 +1098,9 @@ export function App() {
                     ) : null}
                   </section>
 
-                  <div className="wizard-actions">
+                  <div className="wizard-actions wizard-actions-single">
                     <button className="secondary-button" onClick={() => setCurrentStep(3)}>
                       Back
-                    </button>
-                    <button className="primary-button" onClick={() => window.print()}>
-                      Print Packet
                     </button>
                   </div>
                 </div>
