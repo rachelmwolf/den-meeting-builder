@@ -47,7 +47,8 @@ function inferCoverageStatus(requirement: Requirement, activity: Activity | null
 function buildSelections(
   bundles: AdventureBundle[],
   request: MeetingRequest,
-  overrides: Map<string, string> = new Map()
+  overrides: Map<string, string> = new Map(),
+  addedRequirementIds: Set<string> = new Set()
 ): RequirementSelection[] {
   const selectedRequirementIds = new Set(request.requirementIds?.filter(Boolean) ?? []);
 
@@ -67,7 +68,13 @@ function buildSelections(
           adventureName: bundle.adventure.name,
           requirement,
           activity,
-          selectionSource: activity ? (overrideActivityId ? "swapped" : "recommended") : null,
+          selectionSource: activity
+            ? overrideActivityId
+              ? addedRequirementIds.has(requirement.id)
+                ? "added"
+                : "swapped"
+              : "recommended"
+            : null,
           coverageStatus: inferCoverageStatus(requirement, activity)
         };
       })
@@ -130,12 +137,15 @@ function buildActivityAgendaItems(
       adventureId: selection.adventureId,
       adventureName: selection.adventureName,
       requirementIds: [selection.requirement.id],
+      requirementNumber: selection.requirement.requirementNumber,
+      requirementText: selection.requirement.text,
       activityId: activity.id,
       primaryRequirementId: selection.requirement.id,
       selectedActivityId: activity.id,
       alternativeActivityIds: allActivities.filter((candidate) => candidate.id !== activity.id).map((candidate) => candidate.id),
       selectionSource: selection.selectionSource,
       coverageStatus: selection.coverageStatus,
+      addedFromSelection: selection.selectionSource === "added",
       editableNotes:
         activity.notes ||
         `Use the official activity card for ${activity.name} and adjust delivery for ${request.scoutCount} scouts.`
@@ -151,12 +161,15 @@ function buildActivityAgendaItems(
         adventureId: null,
         adventureName: null,
         requirementIds: [],
+        requirementNumber: null,
+        requirementText: null,
         activityId: null,
         primaryRequirementId: null,
         selectedActivityId: null,
         alternativeActivityIds: [],
         selectionSource: null,
         coverageStatus: null,
+        addedFromSelection: false,
         editableNotes: "Use a quick movement break or call-and-response to keep scouts focused."
       });
     }
@@ -179,11 +192,12 @@ function buildPlan(
   rank: Rank,
   bundles: AdventureBundle[],
   request: MeetingRequest,
-  overrides: Map<string, string> = new Map()
+  overrides: Map<string, string> = new Map(),
+  addedRequirementIds: Set<string> = new Set()
 ): MeetingPlan {
   const selectedBundles = bundles.filter((bundle) => request.adventureIds.includes(bundle.adventure.id));
   const allActivities = selectedBundles.flatMap((bundle) => bundle.activities);
-  const selections = buildSelections(selectedBundles, request, overrides);
+  const selections = buildSelections(selectedBundles, request, overrides, addedRequirementIds);
   const coverage = buildCoverage(selections);
   const chosenActivities = selections.map((selection) => selection.activity).filter((activity): activity is Activity => Boolean(activity));
 
@@ -205,12 +219,15 @@ function buildPlan(
       adventureId: null,
       adventureName: null,
       requirementIds: [],
+      requirementNumber: null,
+      requirementText: null,
       activityId: null,
       primaryRequirementId: null,
       selectedActivityId: null,
       alternativeActivityIds: [],
       selectionSource: null,
       coverageStatus: null,
+      addedFromSelection: false,
       editableNotes: `Welcome scouts and preview tonight's focus: ${adventureNames.join(", ")}.`
     },
     ...buildActivityAgendaItems(selections, allActivities, request, activityDurations)
@@ -227,12 +244,15 @@ function buildPlan(
       adventureId: null,
       adventureName: null,
       requirementIds: uncovered.map((item) => item.requirementId),
+      requirementNumber: null,
+      requirementText: null,
       activityId: null,
       primaryRequirementId: null,
       selectedActivityId: null,
       alternativeActivityIds: [],
       selectionSource: null,
       coverageStatus: null,
+      addedFromSelection: false,
       editableNotes: uncovered
         .map((item) => `${item.adventureName} · Requirement ${item.requirementNumber}: ${item.requirementText}`)
         .join(" ")
@@ -248,12 +268,15 @@ function buildPlan(
     adventureId: null,
     adventureName: null,
     requirementIds: [],
+    requirementNumber: null,
+    requirementText: null,
     activityId: null,
     primaryRequirementId: null,
     selectedActivityId: null,
     alternativeActivityIds: [],
     selectionSource: null,
     coverageStatus: null,
+    addedFromSelection: false,
     editableNotes: "Invite each scout to share one thing they learned or enjoyed."
   });
 
@@ -324,7 +347,7 @@ export function swapMeetingActivity(
     if (item.kind !== "activity" || !item.primaryRequirementId || !item.selectedActivityId) {
       continue;
     }
-    if (item.selectionSource === "swapped") {
+    if (item.selectionSource === "swapped" || item.selectionSource === "added") {
       overrides.set(item.primaryRequirementId, item.selectedActivityId);
     }
   }
@@ -334,6 +357,35 @@ export function swapMeetingActivity(
     return plan;
   }
 
-  overrides.set(agendaItem.primaryRequirementId, selectedActivityId);
-  return buildPlan(den, rank, bundles, plan.request, overrides);
+  const selectedActivity = bundles
+    .flatMap((bundle) => bundle.activities)
+    .find((activity) => activity.id === selectedActivityId);
+
+  if (!selectedActivity) {
+    return plan;
+  }
+
+  const targetRequirementId = selectedActivity.requirementId;
+  if (!targetRequirementId || targetRequirementId === agendaItem.primaryRequirementId) {
+    overrides.set(agendaItem.primaryRequirementId, selectedActivityId);
+    return buildPlan(den, rank, bundles, plan.request, overrides);
+  }
+
+  const existingRequirementIds = new Set(
+    plan.agenda
+      .filter((item) => item.kind === "activity" && item.primaryRequirementId)
+      .map((item) => item.primaryRequirementId as string)
+  );
+  const nextRequirementIds = new Set(plan.request.requirementIds?.filter(Boolean) ?? []);
+  nextRequirementIds.add(agendaItem.primaryRequirementId);
+  nextRequirementIds.add(targetRequirementId);
+  overrides.set(targetRequirementId, selectedActivityId);
+  const addedRequirementIds = existingRequirementIds.has(targetRequirementId)
+    ? new Set<string>()
+    : new Set<string>([targetRequirementId]);
+
+  return buildPlan(den, rank, bundles, {
+    ...plan.request,
+    requirementIds: Array.from(nextRequirementIds)
+  }, overrides, addedRequirementIds);
 }
