@@ -680,12 +680,10 @@ export function App() {
                       <div className="trail-section-head trail-section-head-electives">
                         <div>
                           <span className="section-eyebrow">Elective Trail</span>
-                          <p className="subtle-line">Keep electives collapsed unless the den needs them. When open, the cards should scan like the required trail.</p>
                         </div>
                       </div>
                       <div className="trail-grid trail-grid-electives">
                         {electiveTrailBuckets.map((bucket) => {
-                          const progressBucket = trailProgress?.buckets.find((item) => item.key === bucket.key);
                           const content = (
                             <div className="trail-options">
                               {bucket.adventures.length ? (
@@ -707,40 +705,13 @@ export function App() {
                             </div>
                           );
                           return (
-                            <article key={bucket.key} className="trail-card trail-card-collapsible trail-card-elective">
+                            <article key={bucket.key} className="trail-card trail-card-elective">
                               <div className="trail-card-header">
                                 <div>
                                   <h3>{bucket.label}</h3>
                                 </div>
-                                <div className="trail-summary-meta">
-                                  <button
-                                    className="trail-disclosure trail-disclosure-button"
-                                    type="button"
-                                    onClick={() =>
-                                      setOpenElectiveBuckets((current) => {
-                                        const next = new Set(current);
-                                        if (next.has(bucket.key)) {
-                                          next.delete(bucket.key);
-                                        } else {
-                                          next.add(bucket.key);
-                                        }
-                                        return next;
-                                      })
-                                    }
-                                  >
-                                    <span aria-hidden="true">{openElectiveBuckets.has(bucket.key) ? "▴" : "▾"}</span>
-                                    <span>{openElectiveBuckets.has(bucket.key) ? "Click to collapse" : "Click to expand"}</span>
-                                  </button>
-                                </div>
                               </div>
-                              {openElectiveBuckets.has(bucket.key) ? (
-                                <>
-                                  <p className="subtle-line">Elective adventures stay in the same grid so you can compare them at a glance.</p>
-                                  {content}
-                                </>
-                              ) : (
-                                <p className="subtle-line">Elective adventures are collapsed to keep the trail short.</p>
-                              )}
+                              {content}
                             </article>
                           );
                         })}
