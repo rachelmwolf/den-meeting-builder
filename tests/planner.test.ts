@@ -17,7 +17,10 @@ describe("buildMeetingPlan", () => {
       requirementIds: [bundles[0].requirements[0].id],
       durationMinutes: 60,
       scoutCount: 6,
-      environment: "indoor",
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
       notes: "",
       meetingDate: "2026-09-17"
     });
@@ -39,7 +42,10 @@ describe("buildMeetingPlan", () => {
       requirementIds: [selectedRequirementId],
       durationMinutes: 45,
       scoutCount: 5,
-      environment: "indoor",
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
       notes: "",
       meetingDate: null
     });
@@ -62,7 +68,10 @@ describe("buildMeetingPlan", () => {
       requirementIds: [],
       durationMinutes: 45,
       scoutCount: 5,
-      environment: "outdoor",
+      meetingSpace: "outdoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
       notes: "",
       meetingDate: null
     });
@@ -79,7 +88,10 @@ describe("buildMeetingPlan", () => {
       requirementIds: [],
       durationMinutes: 60,
       scoutCount: 6,
-      environment: "indoor",
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
       notes: "",
       meetingDate: null
     });
@@ -107,7 +119,10 @@ describe("buildMeetingPlan", () => {
       requirementIds: [bundles[0].requirements[0].id],
       durationMinutes: 60,
       scoutCount: 6,
-      environment: "indoor",
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
       notes: "",
       meetingDate: null
     });
@@ -136,5 +151,25 @@ describe("buildMeetingPlan", () => {
           item.selectionSource === "added"
       )
     ).toBe(true);
+  });
+
+  test("prefers activities that fit the meeting space and official key limits", () => {
+    const plan = buildMeetingPlan(demoContent.denProfiles[0], demoContent.rank, [bundles[1]], {
+      denId: demoContent.denProfiles[0].id,
+      rankId: demoContent.rank.id,
+      adventureIds: [bundles[1].adventure.id],
+      requirementIds: [bundles[1].requirements[1].id],
+      durationMinutes: 50,
+      scoutCount: 6,
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 2,
+      notes: "",
+      meetingDate: null
+    });
+
+    expect(plan.coverage[0]?.activityName).toBe("Balance Trail");
+    expect(plan.agenda.find((item) => item.kind === "activity")?.description).toContain("Chosen because it");
   });
 });
