@@ -133,7 +133,6 @@ function buildTimeShortNote(plan: MeetingPlan): string {
 
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
-  const [contentStatus, setContentStatus] = useState<any>(null);
   const [dens, setDens] = useState<DenProfile[]>([]);
   const [selectedDenId, setSelectedDenId] = useState("");
   const [trailData, setTrailData] = useState<AdventureTrailData | null>(null);
@@ -155,7 +154,6 @@ export function App() {
 
   useEffect(() => {
     api.getWorkspace().then(setWorkspace);
-    api.getContentStatus().then(setContentStatus);
     api.listDens().then((nextDens) => {
       setDens(nextDens);
       if (nextDens[0]) {
@@ -421,8 +419,13 @@ export function App() {
       <div className="cap-control">
         <div className="cap-control-head">
           <span>{label}</span>
-          <span className="control-help" title={helper} aria-label={helper}>
-            ?
+          <span className="tooltip-wrap">
+            <button type="button" className="control-help" aria-label={`${label} help`}>
+              i
+            </button>
+            <span className="tooltip-popover" role="tooltip">
+              {helper}
+            </span>
           </span>
           <strong>{value}/5</strong>
         </div>
@@ -447,18 +450,10 @@ export function App() {
       <section className="hero">
         <div>
           <p className="eyebrow">{workspace?.name ?? "Pack Workspace"}</p>
-          <h1>Guide the setup. Focus the packet. Keep the year in view.</h1>
+          <h1>Den Leader Planning Workspace</h1>
           <p className="hero-copy">
             Move through a simple den-planning flow, use the Adventure Trail to choose what matters tonight, then customize the final packet without carrying the whole system on one screen.
           </p>
-          {contentStatus ? (
-            <p className="hero-copy content-status-copy">
-              Dataset: <strong>{contentStatus.datasetMode}</strong>
-              {contentStatus.importedRanks.length
-                ? ` · Imported ranks: ${contentStatus.importedRanks.map((rank: any) => rank.rankName).join(", ")}`
-                : " · Using fallback demo content"}
-            </p>
-          ) : null}
         </div>
       </section>
 
@@ -483,7 +478,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 1 · Den and Meeting Basics</h2>
-                  <p>Choose the den, then set the meeting shape and activity limits. The form stays dense, but the groups tell the story.</p>
+                  <p>Choose the den, then set the meeting shape and activity limits.</p>
                 </div>
               </div>
 
@@ -566,13 +561,18 @@ export function App() {
                 <section className="setup-section">
                   <div className="setup-section-head">
                     <span className="section-eyebrow">Activity Constraints</span>
-                    <p>Use the official activity key to steer the recommendations, not to block the planner.</p>
+                    <p>Use the official activity key to steer the recommendations.</p>
                   </div>
                   <div className="setup-grid setup-grid-constraints">
                     <label>
                       Meeting Space
-                      <span className="control-help" title="Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight's meeting." aria-label="Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight's meeting.">
-                        ?
+                      <span className="tooltip-wrap">
+                        <button type="button" className="control-help" aria-label="Meeting space help">
+                          i
+                        </button>
+                        <span className="tooltip-popover" role="tooltip">
+                          Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight&apos;s meeting.
+                        </span>
                       </span>
                       <select
                         aria-label="Meeting Space"
@@ -609,9 +609,6 @@ export function App() {
                   <p>
                     {selectedDen.meetingLocation} · {selectedDen.typicalMeetingDay}
                   </p>
-                  {contentStatus?.lastRefreshedAt ? (
-                    <p>Last content refresh: {new Date(contentStatus.lastRefreshedAt).toLocaleString()}</p>
-                  ) : null}
                 </div>
               ) : null}
 
