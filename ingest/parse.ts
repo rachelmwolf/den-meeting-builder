@@ -190,6 +190,23 @@ function isStopHeading(text: string): boolean {
   return /^(additional resources|other activities options|resources|legal|connect with us|feedback)$/i.test(text);
 }
 
+function looksLikeMaterialText(value: string): boolean {
+  return /(\bbring\b|\bsuppl(y|ies)\b|\bmaterials?\b|\bhandbook\b|\bcrayons?\b|\bpencils?\b|\bmarkers?\b|\bcards?\b|\bpaper\b|\btape\b|\bcones?\b|\brope\b|\bwater bottle\b|\bwhistle\b|\bflashlight\b|\bsunscreen\b|\bhat\b|\bsunglasses\b|\btrail mix\b|\bfirst aid kit\b|\bgear\b)/i.test(value);
+}
+
+function extractMaterials(values: string[]): string[] {
+  const seen = new Set<string>();
+  const materials: string[] = [];
+  for (const value of values) {
+    if (!value || !looksLikeMaterialText(value) || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    materials.push(value);
+  }
+  return materials;
+}
+
 function shouldSkipContentText(text: string): boolean {
   return (
     /image$/i.test(text) ||
@@ -313,6 +330,7 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
       metaBits.find((item) => /(Indoor|Outdoor|Outing with travel|Either)/i.test(item)) ?? ""
     );
     const numericMeta = metaBits.map((item) => parseDifficulty(item)).filter((value): value is number => value !== null);
+    const materials = extractMaterials(metaBits);
     const requirement = currentRequirementNumber ? requirementByNumber.get(currentRequirementNumber) ?? null : null;
     activities.push({
       id: makeId(adventure.id, name),
@@ -327,6 +345,7 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
       supplyLevel: numericMeta[1] ?? null,
       prepLevel: numericMeta[2] ?? null,
       durationMinutes: null,
+      materials,
       notes: summary,
       previewDetails: summary
     });
@@ -382,6 +401,7 @@ export function parseActivityDetailPage(html: string, activity: Activity): Activ
   }
 
   const previewDetails = previewParts.join("\n\n").trim();
+  const materials = extractMaterials(previewParts);
   const rawText = cheerio.load(html).text().replace(/\s+/g, " ").trim();
   const inferredMeetingSpace = normalizeMeetingSpace(rawText);
   return {
@@ -399,6 +419,7 @@ export function parseActivityDetailPage(html: string, activity: Activity): Activ
       parseOfficialKeyLevelFromPage($, "Preparation Time for this Activity") ??
       parseOfficialKeyLevel(rawText, "Preparation Time for this Activity") ??
       activity.prepLevel,
+    materials: materials.length ? materials : activity.materials,
     notes: previewDetails || activity.notes,
     previewDetails: previewDetails || `${activity.summary}\n\nSee the official activity page for full instructions.`
   };
