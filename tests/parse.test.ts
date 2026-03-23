@@ -50,7 +50,11 @@ describe("ingest parsers", () => {
     expect(bundle.activities).toHaveLength(4);
     expect(bundle.activities[0]).toMatchObject({
       name: "Den Doodle Lion",
-      requirementId: bundle.requirements[0].id
+      requirementId: bundle.requirements[0].id,
+      meetingSpace: "indoor",
+      energyLevel: 2,
+      supplyLevel: 4,
+      prepLevel: 2
     });
     expect(bundle.activities[1]).toMatchObject({
       name: "Den Flag Lion",
@@ -68,16 +72,20 @@ describe("ingest parsers", () => {
       slug: "the-compliment-game",
       sourceUrl: "https://www.scouting.org/cub-scout-activities/the-compliment-game/",
       summary: "Everyone pays a compliment to each other in a game.",
-      location: "Indoor",
-      prepMinutes: 5,
+      meetingSpace: "indoor",
+      energyLevel: 1,
+      supplyLevel: 2,
+      prepLevel: 1,
       durationMinutes: 10,
-      difficulty: 1,
       notes: "",
       previewDetails: ""
     });
 
     expect(enriched.previewDetails).toContain("Gather scouts in a circle");
     expect(enriched.previewDetails).toContain("Use simple prompts");
+    expect(enriched.energyLevel).toBe(2);
+    expect(enriched.supplyLevel).toBe(2);
+    expect(enriched.prepLevel).toBe(1);
   });
 
   test("filters script-like tooltip content from an activity detail page", () => {
@@ -89,10 +97,11 @@ describe("ingest parsers", () => {
       slug: "den-doodle-lion",
       sourceUrl: "https://www.scouting.org/cub-scout-activities/den-doodle-lion/",
       summary: "The den doodle is a craft project.",
-      location: "Indoor",
-      prepMinutes: 10,
+      meetingSpace: "indoor",
+      energyLevel: 2,
+      supplyLevel: 4,
+      prepLevel: 2,
       durationMinutes: 15,
-      difficulty: 2,
       notes: "",
       previewDetails: ""
     });
