@@ -6,7 +6,7 @@ import type {
   AdventureTrailData,
   CoverageStatus,
   DenProfile,
-  Environment,
+  MeetingSpace,
   MeetingAgendaItem,
   MeetingPlan,
   PackWorkspace,
@@ -15,11 +15,15 @@ import type {
   SavedMeetingPlan,
   YearPlan
 } from "../shared/types.js";
+import { labelMeetingSpace } from "../shared/utils.js";
 
 const defaultRequest = {
-  durationMinutes: 60,
+  durationMinutes: 50,
   scoutCount: 6,
-  environment: "indoor" as Environment,
+  meetingSpace: "indoor" as MeetingSpace,
+  maxEnergyLevel: 3,
+  maxSupplyLevel: 3,
+  maxPrepLevel: 3,
   notes: "",
   meetingDate: ""
 };
@@ -57,6 +61,15 @@ function shortenRequirementText(text: string | null, maxLength = 110): string {
   return `${text.slice(0, maxLength).trimEnd()}...`;
 }
 
+function describeActivityKey(activity: Activity): string[] {
+  const details = [labelMeetingSpace(activity.meetingSpace)];
+  if (activity.energyLevel) details.push(`Energy ${activity.energyLevel}/5`);
+  if (activity.supplyLevel) details.push(`Supplies ${activity.supplyLevel}/5`);
+  if (activity.prepLevel) details.push(`Prep ${activity.prepLevel}/5`);
+  if (activity.durationMinutes) details.push(`${activity.durationMinutes} min`);
+  return details;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
   const [contentStatus, setContentStatus] = useState<any>(null);
@@ -76,6 +89,7 @@ export function App() {
   const [activeAgendaItemId, setActiveAgendaItemId] = useState<string | null>(null);
   const [activePreviewActivityId, setActivePreviewActivityId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
+  const [isCustomizingPlan, setIsCustomizingPlan] = useState(false);
   const [recap, setRecap] = useState<Omit<SaveRecapRequest, "meetingPlanId">>({
     completedRequirementIds: [],
     recapNotes: "",
@@ -217,6 +231,7 @@ export function App() {
     setSaveMessage("");
     setActiveAgendaItemId(null);
     setActivePreviewActivityId(null);
+    setIsCustomizingPlan(false);
     setRecap({
       completedRequirementIds: [],
       recapNotes: "",
@@ -254,12 +269,16 @@ export function App() {
       requirementIds: selectedRequirementIds,
       durationMinutes: request.durationMinutes,
       scoutCount: request.scoutCount,
-      environment: request.environment,
+      meetingSpace: request.meetingSpace,
+      maxEnergyLevel: request.maxEnergyLevel,
+      maxSupplyLevel: request.maxSupplyLevel,
+      maxPrepLevel: request.maxPrepLevel,
       notes: request.notes,
       meetingDate: request.meetingDate || null
     });
     setPlan(nextPlan);
     setCurrentStep(4);
+    setIsCustomizingPlan(false);
     setRecap({
       completedRequirementIds: [],
       recapNotes: "",
@@ -329,6 +348,7 @@ export function App() {
     });
     setPlan(nextPlan);
     setActivePreviewActivityId(selectedActivityId);
+    setIsCustomizingPlan(true);
   }
 
   async function handleDuplicate(savedPlan: SavedMeetingPlan): Promise<void> {
@@ -385,7 +405,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 1 · Den and Meeting Basics</h2>
-                  <p>Choose the den, capture tonight’s context, and set where this packet should land in the year plan.</p>
+                  <p>Choose the den, capture tonight’s activity-key preferences, and set where this packet should land in the year plan.</p>
                 </div>
               </div>
 
@@ -450,6 +470,64 @@ export function App() {
               </div>
 
               <label>
+                Meeting Space
+                <select
+                  value={request.meetingSpace}
+                  onChange={(event) => {
+                    setRequest((current) => ({ ...current, meetingSpace: event.target.value as MeetingSpace }));
+                    invalidateGeneratedPlan();
+                  }}
+                >
+                  <option value="indoor">Indoor</option>
+                  <option value="outing-with-travel">Outing with travel</option>
+                  <option value="outdoor">Outdoor</option>
+                </select>
+              </label>
+
+              <div className="inline-grid">
+                <label>
+                  Max Cub Scout Energy
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={request.maxEnergyLevel}
+                    onChange={(event) => {
+                      setRequest((current) => ({ ...current, maxEnergyLevel: Number(event.target.value) }));
+                      invalidateGeneratedPlan();
+                    }}
+                  />
+                </label>
+                <label>
+                  Max Supply List
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={request.maxSupplyLevel}
+                    onChange={(event) => {
+                      setRequest((current) => ({ ...current, maxSupplyLevel: Number(event.target.value) }));
+                      invalidateGeneratedPlan();
+                    }}
+                  />
+                </label>
+              </div>
+
+              <label>
+                Max Prep Time
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={request.maxPrepLevel}
+                  onChange={(event) => {
+                    setRequest((current) => ({ ...current, maxPrepLevel: Number(event.target.value) }));
+                    invalidateGeneratedPlan();
+                  }}
+                />
+              </label>
+
+              <label>
                 Meeting Date
                 <input
                   type="date"
@@ -459,21 +537,6 @@ export function App() {
                     invalidateGeneratedPlan();
                   }}
                 />
-              </label>
-
-              <label>
-                Environment
-                <select
-                  value={request.environment}
-                  onChange={(event) => {
-                    setRequest((current) => ({ ...current, environment: event.target.value as Environment }));
-                    invalidateGeneratedPlan();
-                  }}
-                >
-                  <option value="indoor">Indoor</option>
-                  <option value="outdoor">Outdoor</option>
-                  <option value="either">Either</option>
-                </select>
               </label>
 
               <label>
@@ -634,7 +697,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 4 · Leader Packet</h2>
-                  <p>Generate the packet only after the den, trail selection, and requirement scope feel right. Then adjust timings, preview activities, and save it into the year plan.</p>
+                  <p>Generate the packet after the den, trail selection, and requirement scope feel right. Review the proposal first, then opt into customization only if you need to adjust the packet.</p>
                 </div>
                 {plan ? (
                   <button className="secondary-button" onClick={() => window.print()}>
@@ -658,6 +721,20 @@ export function App() {
                     <div className="summary-card"><span>Date</span><strong>{plan.request.meetingDate || "TBD"}</strong></div>
                   </div>
 
+                  <div className="callout">
+                    <strong>{isCustomizingPlan ? "Customization is on" : "Review first"}</strong>
+                    <p>
+                      {isCustomizingPlan
+                        ? "You can now adjust timings, edit notes, and preview alternate activities."
+                        : `This packet was ranked for ${labelMeetingSpace(plan.request.meetingSpace).toLowerCase()}, energy up to ${plan.request.maxEnergyLevel}, supplies up to ${plan.request.maxSupplyLevel}, and prep up to ${plan.request.maxPrepLevel}.`}
+                    </p>
+                    {!isCustomizingPlan ? (
+                      <button className="secondary-button" onClick={() => setIsCustomizingPlan(true)}>
+                        Customize this plan
+                      </button>
+                    ) : null}
+                  </div>
+
                   <div className="list-block">
                     <h3>Printable Packet Includes</h3>
                     <ul>{plan.printSections.map((section) => <li key={section}>{section}</li>)}</ul>
@@ -677,7 +754,11 @@ export function App() {
                             <h3>{item.title}</h3>
                             {item.adventureName ? <p className="subtle-line">{item.adventureName}</p> : null}
                           </div>
-                          <input className="minutes-input" type="number" min={5} value={item.durationMinutes} onChange={(event) => updateAgendaItem(item.id, { durationMinutes: Number(event.target.value) })} />
+                          {isCustomizingPlan ? (
+                            <input className="minutes-input" type="number" min={5} value={item.durationMinutes} onChange={(event) => updateAgendaItem(item.id, { durationMinutes: Number(event.target.value) })} />
+                          ) : (
+                            <span className="current-pill">{item.durationMinutes} min</span>
+                          )}
                         </div>
                         <p>{item.description}</p>
                         {coverageLabel(item.coverageStatus) ? <div className={`coverage-chip coverage-${item.coverageStatus}`}>{coverageLabel(item.coverageStatus)}</div> : null}
@@ -698,13 +779,24 @@ export function App() {
                             </span>
                           </div>
                         ) : null}
-                        <textarea
-                          className="agenda-notes"
-                          rows={6}
-                          value={item.editableNotes}
-                          onChange={(event) => updateAgendaItem(item.id, { editableNotes: event.target.value })}
-                        />
-                        {item.kind === "activity" ? (
+                        {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (
+                          <div className="preview-meta">
+                            {describeActivityKey(activityLookup.get(item.selectedActivityId) as Activity).map((detail) => (
+                              <span key={`${item.id}-${detail}`}>{detail}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {isCustomizingPlan ? (
+                          <textarea
+                            className="agenda-notes"
+                            rows={8}
+                            value={item.editableNotes}
+                            onChange={(event) => updateAgendaItem(item.id, { editableNotes: event.target.value })}
+                          />
+                        ) : (
+                          <p className="preview-details">{item.editableNotes}</p>
+                        )}
+                        {isCustomizingPlan && item.kind === "activity" ? (
                           <div className="agenda-actions">
                             <button className="secondary-button" onClick={() => { setActiveAgendaItemId(item.id); setActivePreviewActivityId(item.selectedActivityId); }}>
                               Preview and Swap Activity
@@ -758,15 +850,15 @@ export function App() {
                       ))}
                       <label>
                         Recap Notes
-                        <textarea className="detail-notes" rows={5} value={recap.recapNotes} onChange={(event) => setRecap((current) => ({ ...current, recapNotes: event.target.value }))} />
+                        <textarea className="detail-notes" rows={8} value={recap.recapNotes} onChange={(event) => setRecap((current) => ({ ...current, recapNotes: event.target.value }))} />
                       </label>
                       <label>
                         Family Follow-up
-                        <textarea className="detail-notes" rows={5} value={recap.familyFollowUp} onChange={(event) => setRecap((current) => ({ ...current, familyFollowUp: event.target.value }))} />
+                        <textarea className="detail-notes" rows={8} value={recap.familyFollowUp} onChange={(event) => setRecap((current) => ({ ...current, familyFollowUp: event.target.value }))} />
                       </label>
                       <label>
                         Reuse Notes for Next Year
-                        <textarea className="detail-notes" rows={5} value={recap.reuseNotes} onChange={(event) => setRecap((current) => ({ ...current, reuseNotes: event.target.value }))} />
+                        <textarea className="detail-notes" rows={8} value={recap.reuseNotes} onChange={(event) => setRecap((current) => ({ ...current, reuseNotes: event.target.value }))} />
                       </label>
                       <button className="secondary-button" onClick={() => void handleSaveRecap()}>
                         Save Meeting Recap
@@ -776,7 +868,7 @@ export function App() {
                     <div className="list-block">
                       <h3>Parent Update Template</h3>
                       <p><strong>{plan.parentUpdate.subject}</strong></p>
-                      <textarea className="detail-notes" rows={12} value={plan.parentUpdate.message} readOnly />
+                      <textarea className="detail-notes" rows={16} value={plan.parentUpdate.message} readOnly />
                     </div>
                   </div>
 
@@ -866,7 +958,7 @@ export function App() {
                         <strong>{activity.name}</strong>
                         <span className="option-badge">{badge}</span>
                       </div>
-                      <span>{activity.location}</span>
+                      <span>{describeActivityKey(activity).join(" · ")}</span>
                       {activity.adventureId !== activeAgendaItem.adventureId && activeAgendaItem.adventureName ? (
                         <span>{plan?.adventures.find((adventure) => adventure.id === activity.adventureId)?.name ?? "Other adventure"}</span>
                       ) : null}
@@ -895,9 +987,9 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="preview-meta">
-                  <span>{activePreviewActivity.location}</span>
-                  {activePreviewActivity.durationMinutes ? <span>{activePreviewActivity.durationMinutes} min</span> : null}
-                  {activePreviewActivity.prepMinutes ? <span>{activePreviewActivity.prepMinutes} min prep</span> : null}
+                  {describeActivityKey(activePreviewActivity).map((detail) => (
+                    <span key={detail}>{detail}</span>
+                  ))}
                 </div>
                 <p className="preview-details">{activePreviewActivity.previewDetails}</p>
                 {activeAgendaItem.primaryRequirementId &&
