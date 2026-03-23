@@ -357,6 +357,8 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByText("Preview and Swap Activity"));
     expect(await screen.findByText("Activity Options")).toBeInTheDocument();
+    expect((await screen.findAllByText("Matches this requirement")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Other official activities")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Animal Warmups"));
     expect(
       await screen.findByText(/Using it will add that requirement as its own agenda block/i)
