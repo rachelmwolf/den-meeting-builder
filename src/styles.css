@@ -385,6 +385,13 @@ label textarea {
   padding: 12px 14px;
 }
 
+.summary-card strong {
+  display: block;
+  margin-top: 10px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
 .summary-card span,
 .agenda-kind {
   display: block;
@@ -398,6 +405,11 @@ label textarea {
   display: block;
   margin-top: 10px;
   line-height: 1.2;
+}
+
+.status-grid {
+  display: grid;
+  gap: 10px;
 }
 
 .trail-grid {
