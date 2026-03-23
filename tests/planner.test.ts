@@ -31,6 +31,7 @@ describe("buildMeetingPlan", () => {
     expect(plan.materials).toContain("Basic craft supplies");
     expect(plan.agenda.find((item) => item.kind === "activity")?.alternativeActivityIds.length).toBeGreaterThan(0);
     expect(plan.parentUpdate.subject).toContain(demoContent.denProfiles[0].name);
+    expect(plan.timeBudget.status).toBe("tight");
   });
 
   test("supports narrowing to an explicit set of requirements", () => {
@@ -78,6 +79,7 @@ describe("buildMeetingPlan", () => {
 
     expect(plan.coverage.some((item) => !item.covered)).toBe(true);
     expect(plan.leaderNotes).toContain("Do not mark uncovered requirements complete");
+    expect(plan.timeBudget.warnings.length).toBeGreaterThan(0);
   });
 
   test("preserves automatic coverage when swapping to another activity for the same requirement", () => {
@@ -171,5 +173,25 @@ describe("buildMeetingPlan", () => {
 
     expect(plan.coverage[0]?.activityName).toBe("Balance Trail");
     expect(plan.agenda.find((item) => item.kind === "activity")?.description).toContain("Chosen because it");
+  });
+
+  test("flags over-budget plans when the selected scope exceeds the meeting length", () => {
+    const plan = buildMeetingPlan(demoContent.denProfiles[0], demoContent.rank, bundles, {
+      denId: demoContent.denProfiles[0].id,
+      rankId: demoContent.rank.id,
+      adventureIds: bundles.map((bundle) => bundle.adventure.id),
+      requirementIds: demoContent.requirements.slice(0, 5).map((requirement) => requirement.id),
+      durationMinutes: 30,
+      scoutCount: 6,
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
+      notes: "",
+      meetingDate: null
+    });
+
+    expect(plan.timeBudget.status).toBe("over");
+    expect(plan.timeBudget.warnings[0]).toContain("over your 30-minute meeting");
   });
 });
