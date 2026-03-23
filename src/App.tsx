@@ -151,6 +151,11 @@ export function App() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isCustomizingPlan, setIsCustomizingPlan] = useState(false);
   const [openElectiveBuckets, setOpenElectiveBuckets] = useState<Set<string>>(() => new Set());
+  const [printOptions, setPrintOptions] = useState({
+    beforeScoutsArrive: true,
+    materialsChecklist: true,
+    quickReflect: true
+  });
 
   useEffect(() => {
     api.getWorkspace().then(setWorkspace);
@@ -829,6 +834,39 @@ export function App() {
                           Customize this plan
                         </button>
                       ) : null}
+                      <div className="packet-option-group">
+                        <span className="packet-option-title">Print options</span>
+                        <label className="packet-option">
+                          <input
+                            checked={printOptions.beforeScoutsArrive}
+                            onChange={(event) =>
+                              setPrintOptions((current) => ({ ...current, beforeScoutsArrive: event.target.checked }))
+                            }
+                            type="checkbox"
+                          />
+                          Add leader checklist
+                        </label>
+                        <label className="packet-option">
+                          <input
+                            checked={printOptions.materialsChecklist}
+                            onChange={(event) =>
+                              setPrintOptions((current) => ({ ...current, materialsChecklist: event.target.checked }))
+                            }
+                            type="checkbox"
+                          />
+                          Add materials list
+                        </label>
+                        <label className="packet-option">
+                          <input
+                            checked={printOptions.quickReflect}
+                            onChange={(event) =>
+                              setPrintOptions((current) => ({ ...current, quickReflect: event.target.checked }))
+                            }
+                            type="checkbox"
+                          />
+                          Add reflection notes
+                        </label>
+                      </div>
                     </section>
 
                     <section className="packet-panel">
@@ -847,40 +885,13 @@ export function App() {
                         <p className="packet-copy">The packet fits the selected meeting length with a little room to breathe.</p>
                       )}
                     </section>
-
-                    <section className="packet-panel packet-panel-save">
-                      <h3>Save to Year Plan</h3>
-                      <label>
-                        Year Plan Month
-                        <input
-                          value={monthPlan.monthLabel}
-                          onChange={(event) =>
-                            setMonthPlan((current) => ({ ...current, monthLabel: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Theme
-                        <input
-                          value={monthPlan.theme}
-                          onChange={(event) =>
-                            setMonthPlan((current) => ({ ...current, theme: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <p className="subtle-line">Month key: {deriveMonthKey(request.meetingDate, monthPlan.monthKey)}</p>
-                      <button className="secondary-button" onClick={() => void handleSave()}>
-                        Save to Year Plan
-                      </button>
-                      {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
-                    </section>
                   </aside>
 
                   <section className="packet-canvas">
                     <article className="packet-page">
                       <header className="packet-page-header">
                         <div>
-                          <span className="section-eyebrow">Packet Preview</span>
+                          <span className="section-eyebrow">Meeting Plan</span>
                           <h2>{plan.denName}</h2>
                           <p>
                             {plan.request.meetingDate || "Date TBD"} · {plan.adventures.map((adventure) => adventure.name).join(", ")}
@@ -897,28 +908,6 @@ export function App() {
                           Den: {plan.denName} · Space: {labelMeetingSpace(plan.request.meetingSpace)} · Scouts: {plan.request.scoutCount}
                         </p>
                         <p>Tonight’s success looks like: {buildSuccessSummary(plan)}</p>
-                      </section>
-
-                      <section className="packet-columns">
-                        <div className="packet-block">
-                          <h3>Before Scouts Arrive</h3>
-                          <ul className="print-checklist">
-                            <li><span className="print-checkbox" aria-hidden="true" /> Materials out</li>
-                            <li><span className="print-checkbox" aria-hidden="true" /> Opening ready</li>
-                            <li><span className="print-checkbox" aria-hidden="true" /> First activity staged</li>
-                          </ul>
-                        </div>
-                        <div className="packet-block">
-                          <h3>Materials Checklist</h3>
-                          <ul className="print-checklist">
-                            {plan.materials.map((item) => (
-                              <li key={`packet-${item}`}>
-                                <span className="print-checkbox" aria-hidden="true" />
-                                {item}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
                       </section>
 
                       <section className="packet-block">
@@ -976,19 +965,36 @@ export function App() {
                         <h3>If Time Runs Short</h3>
                         <p>{buildTimeShortNote(plan)}</p>
                       </section>
-
-                      <section className="packet-block">
-                        <h3>Quick Reflect</h3>
-                        <div className="reflect-block">
-                          <strong>What was completed?</strong>
-                          <div className="reflect-lines" />
-                          <strong>What should I log in Scoutbook later?</strong>
-                          <div className="reflect-lines" />
-                          <strong>What do I want to remember for next time?</strong>
-                          <div className="reflect-lines" />
-                        </div>
-                      </section>
                     </article>
+                  </section>
+
+                  <section className="packet-panel packet-panel-save">
+                    <h3>Save to Year Plan</h3>
+                    <div className="packet-save-grid">
+                      <label>
+                        Year Plan Month
+                        <input
+                          value={monthPlan.monthLabel}
+                          onChange={(event) =>
+                            setMonthPlan((current) => ({ ...current, monthLabel: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Theme
+                        <input
+                          value={monthPlan.theme}
+                          onChange={(event) =>
+                            setMonthPlan((current) => ({ ...current, theme: event.target.value }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <p className="subtle-line">Month key: {deriveMonthKey(request.meetingDate, monthPlan.monthKey)}</p>
+                    <button className="secondary-button" onClick={() => void handleSave()}>
+                      Save to Year Plan
+                    </button>
+                    {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
                   </section>
 
                   <section className="print-sheet print-only">
@@ -1012,28 +1018,6 @@ export function App() {
                       <p>
                         Tonight’s success looks like: {buildSuccessSummary(plan)}
                       </p>
-                    </section>
-
-                    <section className="print-columns">
-                      <div className="print-section">
-                        <h3>Before Scouts Arrive</h3>
-                        <ul className="print-checklist">
-                          <li><span className="print-checkbox" aria-hidden="true" /> Materials out</li>
-                          <li><span className="print-checkbox" aria-hidden="true" /> Opening ready</li>
-                          <li><span className="print-checkbox" aria-hidden="true" /> First activity staged</li>
-                        </ul>
-                      </div>
-                      <div className="print-section">
-                        <h3>Materials Checklist</h3>
-                        <ul className="print-checklist">
-                          {plan.materials.map((item) => (
-                            <li key={`print-${item}`}>
-                              <span className="print-checkbox" aria-hidden="true" />
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
                     </section>
 
                     <section className="print-section">
@@ -1072,17 +1056,44 @@ export function App() {
                       <p>{buildTimeShortNote(plan)}</p>
                     </section>
 
-                    <section className="print-section">
-                      <h3>Quick Reflect</h3>
-                      <div className="reflect-block">
-                        <strong>What was completed?</strong>
-                        <div className="reflect-lines" />
-                        <strong>What should I log in Scoutbook later?</strong>
-                        <div className="reflect-lines" />
-                        <strong>What do I want to remember for next time?</strong>
-                        <div className="reflect-lines" />
-                      </div>
-                    </section>
+                    {printOptions.beforeScoutsArrive ? (
+                      <section className="print-section">
+                        <h3>Before Scouts Arrive</h3>
+                        <ul className="print-checklist">
+                          <li><span className="print-checkbox" aria-hidden="true" /> Materials out</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Opening ready</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> First activity staged</li>
+                        </ul>
+                      </section>
+                    ) : null}
+
+                    {printOptions.materialsChecklist ? (
+                      <section className="print-section">
+                        <h3>Materials Checklist</h3>
+                        <ul className="print-checklist">
+                          {plan.materials.map((item) => (
+                            <li key={`print-${item}`}>
+                              <span className="print-checkbox" aria-hidden="true" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+
+                    {printOptions.quickReflect ? (
+                      <section className="print-section">
+                        <h3>Quick Reflect</h3>
+                        <div className="reflect-block">
+                          <strong>What was completed?</strong>
+                          <div className="reflect-lines" />
+                          <strong>What should I log in Scoutbook later?</strong>
+                          <div className="reflect-lines" />
+                          <strong>What do I want to remember for next time?</strong>
+                          <div className="reflect-lines" />
+                        </div>
+                      </section>
+                    ) : null}
                   </section>
 
                   <div className="wizard-actions">
