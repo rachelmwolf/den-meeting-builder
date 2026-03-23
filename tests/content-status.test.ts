@@ -29,6 +29,14 @@ describe("content status", () => {
     expect(status.datasetMode).toBe("demo");
     expect(status.importedRanks).toEqual([]);
     expect(status.lastRefreshedAt).toBeNull();
+    expect(status.activityFieldCoverage).toMatchObject({
+      totalActivities: 0,
+      meetingSpaceCount: 0,
+      energyLevelCount: 0,
+      supplyLevelCount: 0,
+      prepLevelCount: 0,
+      materialsCount: 0
+    });
   });
 
   test("reports mixed mode and creates a usable den for an imported rank", () => {
@@ -47,6 +55,14 @@ describe("content status", () => {
         refreshedAt: "2026-03-22T10:00:00.000Z"
       }
     ]);
+    expect(status.activityFieldCoverage).toMatchObject({
+      totalActivities: 0,
+      meetingSpaceCount: 0,
+      energyLevelCount: 0,
+      supplyLevelCount: 0,
+      prepLevelCount: 0,
+      materialsCount: 0
+    });
     expect(dens[0]).toMatchObject({
       rankId: "wolf",
       name: "Wolf Imported Den"
