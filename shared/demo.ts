@@ -122,10 +122,11 @@ const activities: Activity[] = [
     slug: slugify("Den Doodle Lion"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/den-doodle-lion/",
     summary: "The den doodle is a craft project that can be used to track attendance, reward good behavior, and completion of requirements.",
-    location: "Indoor",
-    prepMinutes: 10,
+    meetingSpace: "indoor",
+    energyLevel: 2,
+    supplyLevel: 4,
+    prepLevel: 2,
     durationMinutes: 15,
-    difficulty: 2,
     notes: "Bring simple craft supplies and display the doodle where Lions can add to it.",
     previewDetails:
       "Use a den doodle to welcome scouts, track attendance, and give everyone a visible place in the den. Prep simple craft materials and leave time for each scout to add their piece."
@@ -138,10 +139,11 @@ const activities: Activity[] = [
     slug: slugify("Den Flag Lion"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/den-flag-lion/",
     summary: "A den flag craft that helps scouts learn names and build den identity.",
-    location: "Indoor",
-    prepMinutes: 10,
+    meetingSpace: "indoor",
+    energyLevel: 2,
+    supplyLevel: 3,
+    prepLevel: 2,
     durationMinutes: 15,
-    difficulty: 2,
     notes: "Good alternate for requirement 1 if the den wants a collaborative craft.",
     previewDetails:
       "Make a simple den flag together so each scout contributes a name, symbol, or color. This is a strong alternate for getting to know den members while making something the group can reuse."
@@ -154,10 +156,11 @@ const activities: Activity[] = [
     slug: slugify("The Compliment Game"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/the-compliment-game/",
     summary: "Everyone pays a compliment to each other in a game.",
-    location: "Indoor",
-    prepMinutes: 5,
+    meetingSpace: "indoor",
+    energyLevel: 1,
+    supplyLevel: 2,
+    prepLevel: 1,
     durationMinutes: 10,
-    difficulty: 1,
     notes: "Great for circle time and practicing friendly behavior.",
     previewDetails:
       "Run this as a short circle game where each scout gives a compliment to another scout. It works well as a discussion-based activity with minimal supplies."
@@ -170,10 +173,11 @@ const activities: Activity[] = [
     slug: slugify("When Am I Doing My Best?"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/when-am-i-doing-my-best/",
     summary: "Activity to help Cub Scouts identify what it means to do their best.",
-    location: "Indoor",
-    prepMinutes: 5,
+    meetingSpace: "indoor",
+    energyLevel: 1,
+    supplyLevel: 2,
+    prepLevel: 1,
     durationMinutes: 10,
-    difficulty: 1,
     notes: "Invite each scout to share one example from school or home.",
     previewDetails:
       "Use simple prompts to help scouts identify what doing their best looks like at school, at home, and in the den. Encourage each scout to share one example."
@@ -186,10 +190,11 @@ const activities: Activity[] = [
     slug: slugify("Animal Warmups"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/animal-warmups/",
     summary: "Scouts move like animals while learning simple warm-up motions.",
-    location: "Indoor or Outdoor",
-    prepMinutes: 5,
+    meetingSpace: "indoor-or-outdoor",
+    energyLevel: 3,
+    supplyLevel: 1,
+    prepLevel: 1,
     durationMinutes: 10,
-    difficulty: 1,
     notes: "Use this first to get energy focused before active games.",
     previewDetails:
       "Lead the den through a quick series of animal-themed warmups like bear crawls, flamingo balance, and frog jumps to make stretching feel playful."
@@ -202,10 +207,11 @@ const activities: Activity[] = [
     slug: slugify("Balance Trail"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/balance-trail/",
     summary: "Build a simple movement course that asks scouts to balance, hop, and change direction.",
-    location: "Indoor or Outdoor",
-    prepMinutes: 10,
+    meetingSpace: "indoor-or-outdoor",
+    energyLevel: 4,
+    supplyLevel: 2,
+    prepLevel: 2,
     durationMinutes: 15,
-    difficulty: 2,
     notes: "Tape lines on the floor or use cones outdoors.",
     previewDetails:
       "Set up a short balance and movement path that lets scouts practice control, speed changes, and coordination while cheering each other on."
@@ -218,10 +224,11 @@ const activities: Activity[] = [
     slug: slugify("Relay Cheers"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/relay-cheers/",
     summary: "A short relay game that mixes movement with positive den encouragement.",
-    location: "Outdoor",
-    prepMinutes: 5,
+    meetingSpace: "outdoor",
+    energyLevel: 5,
+    supplyLevel: 1,
+    prepLevel: 1,
     durationMinutes: 12,
-    difficulty: 1,
     notes: "Strong alternative when the den has room to run.",
     previewDetails:
       "Use a short relay with simple tasks and built-in cheers so scouts move quickly and celebrate one another without making the game too competitive."
@@ -234,10 +241,11 @@ const activities: Activity[] = [
     slug: slugify("Nature Noticing Walk"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/nature-noticing-walk/",
     summary: "Take a short walk and ask scouts to notice sounds, colors, and movement outdoors.",
-    location: "Outdoor",
-    prepMinutes: 5,
+    meetingSpace: "outdoor",
+    energyLevel: 2,
+    supplyLevel: 1,
+    prepLevel: 1,
     durationMinutes: 15,
-    difficulty: 1,
     notes: "Good for a calm outdoor reset.",
     previewDetails:
       "Walk slowly through an outdoor space and ask scouts to point out what they hear, see, and smell so they practice observation without rushing."
@@ -250,10 +258,11 @@ const activities: Activity[] = [
     slug: slugify("What Goes Outside?"),
     sourceUrl: "https://www.scouting.org/cub-scout-activities/what-goes-outside/",
     summary: "Talk through simple gear and clothing choices for a short outdoor activity.",
-    location: "Indoor",
-    prepMinutes: 5,
+    meetingSpace: "indoor",
+    energyLevel: 1,
+    supplyLevel: 2,
+    prepLevel: 1,
     durationMinutes: 10,
-    difficulty: 1,
     notes: "Useful if weather moves the den indoors.",
     previewDetails:
       "Use pictures or actual gear to help scouts talk about what they should wear or carry for a simple outdoor walk, even if the conversation happens inside."
