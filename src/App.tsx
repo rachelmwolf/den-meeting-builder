@@ -625,7 +625,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 2 · Choose Adventures From the Trail</h2>
-                  <p>Select one or more adventures for this meeting. The trail groups what is required for rank progress and what counts as electives.</p>
+                  <p>Select one or more adventures for this meeting.</p>
                 </div>
               </div>
 
