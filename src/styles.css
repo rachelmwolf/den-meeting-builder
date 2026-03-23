@@ -753,6 +753,11 @@ label textarea {
   margin-top: 12px;
 }
 
+.wizard-actions-single {
+  grid-template-columns: max-content;
+  justify-content: start;
+}
+
 .wizard-inline-actions {
   grid-template-columns: repeat(2, max-content);
 }
@@ -780,6 +785,14 @@ label textarea {
   padding: 10px 12px;
   display: grid;
   gap: 8px;
+}
+
+.packet-meeting-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px 2px;
 }
 
 .packet-save-grid {
