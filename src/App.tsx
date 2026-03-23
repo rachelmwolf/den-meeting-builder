@@ -69,6 +69,23 @@ function describeActivityKey(activity: Activity): string[] {
   return details;
 }
 
+function splitActivityNotes(activity: Activity): string[] {
+  return [activity.notes, activity.previewDetails]
+    .flatMap((value) => value.split(/\n{2,}/))
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function getActivityMaterials(activity: Activity): string[] {
+  const blocks = splitActivityNotes(activity);
+  return blocks.filter((block) => /(\bbring\b|\bsuppl(y|ies)\b|\bmaterials?\b|\bhandbook\b|\bcrayons?\b|\bpencils?\b|\bmarkers?\b|\bcards?\b|\bpaper\b|\btape\b|\bcones?\b|\brope\b|\bwater bottle\b|\bwhistle\b|\bflashlight\b|\bsunscreen\b|\bhat\b|\bsunglasses\b|\btrail mix\b|\bfirst aid kit\b|\bgear\b)/i.test(block)).slice(0, 4);
+}
+
+function getActivityOverview(activity: Activity): string {
+  const blocks = splitActivityNotes(activity);
+  return blocks.find((block) => block !== activity.summary && !getActivityMaterials(activity).includes(block)) ?? activity.summary;
+}
+
 function timeBudgetLabel(status: MeetingPlan["timeBudget"]["status"]): string {
   if (status === "over") return "Over time";
   if (status === "tight") return "Tight fit";
@@ -584,6 +601,47 @@ export function App() {
                 {!trailLoading && !trailError
                   ? trailData?.buckets.map((bucket) => {
                   const progressBucket = trailProgress?.buckets.find((item) => item.key === bucket.key);
+                  const content = (
+                    <div className="trail-options">
+                      {bucket.adventures.length ? (
+                        bucket.adventures.map((adventure) => (
+                          <label key={adventure.id} className={`trail-option ${selectedAdventureIds.includes(adventure.id) ? "trail-option-active" : ""}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedAdventureIds.includes(adventure.id)}
+                              onChange={() => toggleAdventure(adventure.id)}
+                            />
+                            <div>
+                              <strong>{adventure.name}</strong>
+                              <p>{adventure.kind === "required" ? "Required adventure" : "Elective adventure"}</p>
+                            </div>
+                          </label>
+                        ))
+                      ) : (
+                        <div className="empty-state compact-empty">No adventures imported for this bucket yet.</div>
+                      )}
+                    </div>
+                  );
+                  if (!bucket.required) {
+                    return (
+                      <details key={bucket.key} className="trail-card trail-card-collapsible">
+                        <summary className="trail-card-summary">
+                          <div className="trail-card-header">
+                            <div>
+                              <span className="agenda-kind">{bucket.required ? "Required Trail" : "Elective Trail"}</span>
+                              <h3>{bucket.label}</h3>
+                            </div>
+                            {progressBucket ? (
+                              <span className={`coverage-chip ${progressBucket.completedCount >= progressBucket.targetCount ? "coverage-automatic" : "coverage-uncovered"}`}>
+                                {describeProgress(progressBucket.completedCount, progressBucket.targetCount, bucket.required)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </summary>
+                        {content}
+                      </details>
+                    );
+                  }
                   return (
                     <article key={bucket.key} className="trail-card">
                       <div className="trail-card-header">
@@ -597,25 +655,7 @@ export function App() {
                           </span>
                         ) : null}
                       </div>
-                      <div className="trail-options">
-                        {bucket.adventures.length ? (
-                          bucket.adventures.map((adventure) => (
-                            <label key={adventure.id} className={`trail-option ${selectedAdventureIds.includes(adventure.id) ? "trail-option-active" : ""}`}>
-                              <input
-                                type="checkbox"
-                                checked={selectedAdventureIds.includes(adventure.id)}
-                                onChange={() => toggleAdventure(adventure.id)}
-                              />
-                              <div>
-                                <strong>{adventure.name}</strong>
-                                <p>{adventure.kind === "required" ? "Required adventure" : "Elective adventure"}</p>
-                              </div>
-                            </label>
-                          ))
-                        ) : (
-                          <div className="empty-state compact-empty">No adventures imported for this bucket yet.</div>
-                        )}
-                      </div>
+                      {content}
                     </article>
                   );
                     })
@@ -804,6 +844,18 @@ export function App() {
                             ))}
                           </div>
                         ) : null}
+                        {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (
+                          (() => {
+                            const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
+                            const materials = getActivityMaterials(selectedActivity);
+                            return materials.length ? (
+                              <div className="agenda-requirement">
+                                <strong>Materials</strong>
+                                <p>{materials.join(" · ")}</p>
+                              </div>
+                            ) : null;
+                          })()
+                        ) : null}
                         {isCustomizingPlan ? (
                           <textarea
                             className="agenda-notes"
@@ -925,9 +977,16 @@ export function App() {
                             <div>
                               <strong>{item.durationMinutes} min</strong>
                               <p>{shortenRequirementText(item.editableNotes || item.description, 120)}</p>
-                              {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (
-                                <p>{describeActivityKey(activityLookup.get(item.selectedActivityId) as Activity).join(" · ")}</p>
-                              ) : null}
+                              {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (() => {
+                                const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
+                                const materials = getActivityMaterials(selectedActivity);
+                                return (
+                                  <>
+                                    <p>{describeActivityKey(selectedActivity).join(" · ")}</p>
+                                    <p>{materials.length ? `Materials: ${materials.join(" · ")}` : `Materials / setup: ${shortenRequirementText(getActivityOverview(selectedActivity), 120)}`}</p>
+                                  </>
+                                );
+                              })() : null}
                             </div>
                           </div>
                         ))}
@@ -1071,7 +1130,15 @@ export function App() {
                     <span key={detail}>{detail}</span>
                   ))}
                 </div>
-                <p className="preview-details">{activePreviewActivity.previewDetails}</p>
+                <div className="agenda-requirement">
+                  <strong>Materials</strong>
+                  <p>
+                    {getActivityMaterials(activePreviewActivity).length
+                      ? getActivityMaterials(activePreviewActivity).join(" · ")
+                      : shortenRequirementText(getActivityOverview(activePreviewActivity), 180)}
+                  </p>
+                </div>
+                <p className="preview-details">{getActivityOverview(activePreviewActivity)}</p>
                 {activeAgendaItem.primaryRequirementId &&
                 ((activePreviewActivity.requirementId && activePreviewActivity.requirementId !== activeAgendaItem.primaryRequirementId) ||
                   activePreviewActivity.adventureId !== activeAgendaItem.adventureId) ? (
