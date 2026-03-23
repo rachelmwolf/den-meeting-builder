@@ -347,7 +347,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByText("Refine Requirements"));
     fireEvent.click(await screen.findByText("Generate Leader Packet"));
 
-    expect(await screen.findByText("Leader Packet")).toBeInTheDocument();
+    expect(await screen.findByText("Step 4 · Leader Packet")).toBeInTheDocument();
     expect((await screen.findAllByText(/Bobcat Lion, Fun on the Run/i)).length).toBeGreaterThan(0);
     expect(await screen.findByText("Customize this plan")).toBeInTheDocument();
     expect(screen.queryByText("Preview and Swap Activity")).not.toBeInTheDocument();
@@ -400,7 +400,7 @@ describe("App", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/plans/generate", expect.objectContaining({ method: "POST" }))
     );
-    expect(await screen.findByText("Leader Packet")).toBeInTheDocument();
+    expect(await screen.findByText("Step 4 · Leader Packet")).toBeInTheDocument();
     expect((await screen.findAllByText("Materials Checklist")).length).toBeGreaterThan(0);
   });
 
