@@ -172,6 +172,18 @@ export interface ParentUpdateTemplate {
   message: string;
 }
 
+export type TimeBudgetStatus = "fits" | "tight" | "over";
+
+export interface TimeBudgetSummary {
+  targetMinutes: number;
+  plannedMinutes: number;
+  minimumSuggestedMinutes: number;
+  recommendedMinutes: number;
+  activityCount: number;
+  status: TimeBudgetStatus;
+  warnings: string[];
+}
+
 export interface MeetingRecap {
   meetingPlanId: string;
   completedRequirementIds: string[];
@@ -194,6 +206,7 @@ export interface MeetingPlan {
   coverage: CoverageItem[];
   activityLibrary: Activity[];
   leaderNotes: string;
+  timeBudget: TimeBudgetSummary;
   generatedAt: string;
   printSections: string[];
   parentUpdate: ParentUpdateTemplate;
