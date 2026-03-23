@@ -14,7 +14,7 @@ describe("buildMeetingPlan", () => {
       denId: demoContent.denProfiles[0].id,
       rankId: demoContent.rank.id,
       adventureIds: bundles.map((bundle) => bundle.adventure.id),
-      requirementIds: [],
+      requirementIds: [bundles[0].requirements[0].id],
       durationMinutes: 60,
       scoutCount: 6,
       environment: "indoor",
@@ -99,12 +99,12 @@ describe("buildMeetingPlan", () => {
     );
   });
 
-  test("changes coverage to leader review when swapping to a different adventure's activity", () => {
+  test("adds a new requirement block when selecting an activity from a different requirement", () => {
     const plan = buildMeetingPlan(demoContent.denProfiles[0], demoContent.rank, bundles, {
       denId: demoContent.denProfiles[0].id,
       rankId: demoContent.rank.id,
       adventureIds: bundles.map((bundle) => bundle.adventure.id),
-      requirementIds: [],
+      requirementIds: [bundles[0].requirements[0].id],
       durationMinutes: 60,
       scoutCount: 6,
       environment: "indoor",
@@ -123,8 +123,18 @@ describe("buildMeetingPlan", () => {
     );
 
     expect(swapped.coverage.find((item) => item.requirementId === bundles[0].requirements[0].id)?.coverageStatus).toBe(
-      "leader-review"
+      "automatic"
     );
-    expect(swapped.leaderNotes).toContain("leader review");
+    expect(swapped.coverage.find((item) => item.requirementId === bundles[1].requirements[0].id)?.coverageStatus).toBe(
+      "automatic"
+    );
+    expect(
+      swapped.agenda.some(
+        (item) =>
+          item.kind === "activity" &&
+          item.primaryRequirementId === bundles[1].requirements[0].id &&
+          item.selectionSource === "added"
+      )
+    ).toBe(true);
   });
 });
