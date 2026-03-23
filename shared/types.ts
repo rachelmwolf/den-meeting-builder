@@ -32,10 +32,20 @@ export interface ImportedRankStatus {
   refreshedAt: string;
 }
 
+export interface ActivityFieldCoverage {
+  totalActivities: number;
+  meetingSpaceCount: number;
+  energyLevelCount: number;
+  supplyLevelCount: number;
+  prepLevelCount: number;
+  materialsCount: number;
+}
+
 export interface ContentStatus {
   datasetMode: DatasetMode;
   importedRanks: ImportedRankStatus[];
   lastRefreshedAt: string | null;
+  activityFieldCoverage: ActivityFieldCoverage;
 }
 
 export interface Rank {
@@ -114,6 +124,7 @@ export interface Activity {
   supplyLevel: number | null;
   prepLevel: number | null;
   durationMinutes: number | null;
+  materials: string[];
   notes: string;
   previewDetails: string;
 }
