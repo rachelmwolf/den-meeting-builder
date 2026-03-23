@@ -772,11 +772,44 @@ label textarea {
 }
 
 .packet-panel {
-  padding: 10px;
+  padding: 8px;
 }
 
 .packet-panel-save {
   grid-column: 1 / -1;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.packet-save-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.packet-option-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(28, 36, 38, 0.08);
+}
+
+.packet-option-title {
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.packet-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  color: var(--text);
 }
 
 .packet-panel h3,
@@ -794,7 +827,7 @@ label textarea {
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(28, 36, 38, 0.12);
   border-radius: 24px;
-  padding: 16px;
+  padding: 14px;
   box-shadow: 0 20px 50px rgba(44, 43, 37, 0.1);
   display: grid;
   gap: 10px;
@@ -809,7 +842,7 @@ label textarea {
 
 .packet-block {
   border-top: 1px solid rgba(28, 36, 38, 0.08);
-  padding-top: 12px;
+  padding-top: 10px;
 }
 
 .packet-columns {
@@ -826,7 +859,7 @@ label textarea {
 .packet-activity-row {
   display: grid;
   grid-template-columns: minmax(0, 220px) 1fr;
-  gap: 8px;
+  gap: 6px;
   padding-top: 4px;
   border-top: 1px solid rgba(28, 36, 38, 0.08);
 }
