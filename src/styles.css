@@ -120,6 +120,9 @@ textarea {
 
 .sidebar-stack,
 .step-panel,
+.setup-sections,
+.trail-section,
+.trail-section-head,
 .trail-grid,
 .trail-options,
 .trail-progress-list,
@@ -310,7 +313,25 @@ label textarea {
 }
 
 .trail-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.trail-section {
+  display: grid;
+  gap: 16px;
+}
+
+.trail-section-head {
+  display: grid;
+  gap: 6px;
+}
+
+.trail-grid-required {
+  align-items: start;
+}
+
+.trail-grid-electives {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .trail-card {
@@ -386,8 +407,12 @@ label textarea {
 }
 
 .trail-options {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   padding-top: 14px;
+}
+
+.trail-card-elective {
+  width: 100%;
 }
 
 .trail-option p,
@@ -965,10 +990,15 @@ label textarea {
   .panel-header > div > p,
   .preview-details,
   .content-status-copy,
-  .packet-workbench,
   .packet-toolbar,
-  .packet-page {
+  .packet-page,
+  .packet-canvas {
     display: none !important;
+  }
+
+  .packet-workbench {
+    display: block !important;
+    margin: 0;
   }
 
   .panel-header {
