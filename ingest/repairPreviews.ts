@@ -16,6 +16,14 @@ function mapActivity(row: Record<string, unknown>): Activity {
     supplyLevel: row.supply_level === null ? null : Number(row.supply_level),
     prepLevel: row.prep_level === null ? null : Number(row.prep_level),
     durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
+    materials: (() => {
+      try {
+        const parsed = JSON.parse(String(row.materials_json ?? "[]"));
+        return Array.isArray(parsed) ? parsed.map((entry) => String(entry)) : [];
+      } catch {
+        return [];
+      }
+    })(),
     notes: String(row.notes),
     previewDetails: String(row.preview_details ?? "")
   };
