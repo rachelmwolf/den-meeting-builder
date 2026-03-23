@@ -99,6 +99,7 @@ export const noisyActivityPageFixture = `
     <p>Supply List for this Activity 1 No supplies needed to 5 custom build or uncommon items. 4</p>
     <p>Preparation Time for this Activity 1 minimal prep to 5 a week or more ahead of time. 2</p>
     <p>The den doodle is a craft project that can be used to track attendance, reward good behavior, and completion of requirements.</p>
+    <p>Crayons of various colors, enough to share</p>
     <p>Lion - Kindergarten Den Doodle Lion Indoor</p>
     <p>jQuery(window).on('elementor/frontend/init elementor/popup/show', function() { var $currentTooltip = '#eael'; });</p>
     <ul>
