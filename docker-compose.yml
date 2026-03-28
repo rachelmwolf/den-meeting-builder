@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3001
+      DEN_MEETING_DB_PATH: /data/den-meeting-builder.sqlite
+    ports:
+      - "3001:3001"
+    volumes:
+      - den_data:/data
+
+volumes:
+  den_data:
