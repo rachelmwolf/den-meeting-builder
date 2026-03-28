@@ -21,7 +21,14 @@ export type AgendaSectionKind =
 export interface PackWorkspace {
   id: string;
   name: string;
-  planningNotes: string;
+}
+
+export type CurriculumEntityType = "ranks" | "adventures" | "requirements" | "activities";
+
+export interface SourceSnapshot {
+  sourceUrl: string;
+  rawHtml: string;
+  fetchedAt: string;
 }
 
 export type DatasetMode = "demo" | "imported" | "mixed";
@@ -47,6 +54,55 @@ export interface ContentStatus {
   lastRefreshedAt: string | null;
   activityFieldCoverage: ActivityFieldCoverage;
 }
+
+export interface AdminCurriculumListItem {
+  entityType: CurriculumEntityType;
+  id: string;
+  title: string;
+  subtitle: string;
+  sourceUrl: string;
+  refreshedAt: string | null;
+  tags: string[];
+}
+
+export interface AdminRankRecord extends Rank {
+  adventureCount: number;
+  denCount: number;
+  sourceSnapshot: SourceSnapshot | null;
+}
+
+export interface AdminAdventureRecord extends Adventure {
+  rankName: string;
+  requirementCount: number;
+  activityCount: number;
+  sourceSnapshot: SourceSnapshot | null;
+}
+
+export interface AdminRequirementRecord extends Requirement {
+  rankName: string;
+  adventureName: string;
+  activityCount: number;
+  sourceSnapshot: SourceSnapshot | null;
+}
+
+export interface AdminActivityRecord extends Activity {
+  rankName: string;
+  adventureName: string;
+  requirementNumber: number | null;
+  sourceSnapshot: SourceSnapshot | null;
+}
+
+export type AdminCurriculumDetail =
+  | { entityType: "ranks"; record: AdminRankRecord }
+  | { entityType: "adventures"; record: AdminAdventureRecord }
+  | { entityType: "requirements"; record: AdminRequirementRecord }
+  | { entityType: "activities"; record: AdminActivityRecord };
+
+export type AdminCurriculumWrite =
+  | { entityType: "ranks"; record: Rank }
+  | { entityType: "adventures"; record: Adventure }
+  | { entityType: "requirements"; record: Requirement }
+  | { entityType: "activities"; record: Activity };
 
 export interface Rank {
   id: string;
@@ -75,6 +131,8 @@ export interface Adventure {
   category: string;
   sourceUrl: string;
   snapshot: string;
+  safetyMoment?: string;
+  alternatePath?: string;
 }
 
 export interface AdventureTrailBucket {
@@ -111,6 +169,23 @@ export interface Requirement {
   text: string;
 }
 
+export interface ActivityDirectionStep {
+  text: string;
+  bullets: string[];
+}
+
+export interface ActivityDirectionSection {
+  heading: string;
+  steps: ActivityDirectionStep[];
+}
+
+export interface ActivityDirections {
+  atHomeOption: ActivityDirectionSection | null;
+  before: ActivityDirectionSection | null;
+  during: ActivityDirectionSection | null;
+  after: ActivityDirectionSection | null;
+}
+
 export interface Activity {
   id: string;
   adventureId: string;
@@ -125,8 +200,10 @@ export interface Activity {
   prepLevel: number | null;
   durationMinutes: number | null;
   materials: string[];
-  notes: string;
   previewDetails: string;
+  supplyNote?: string;
+  directions?: ActivityDirections | null;
+  hasAdditionalResources?: boolean;
 }
 
 export interface MeetingRequest {
@@ -223,42 +300,43 @@ export interface MeetingPlan {
   parentUpdate: ParentUpdateTemplate;
 }
 
+export interface OpeningPromptVariables {
+  rank: string;
+  grade: string;
+  adventures: string;
+  requirements: string;
+  activities: string;
+}
+
+export interface OpeningPromptEnvelope {
+  prompt: {
+    id: string;
+    version: string;
+    variables: OpeningPromptVariables;
+  };
+}
+
+export type OpeningGenerationRequest = OpeningPromptEnvelope;
+
+export interface OpeningGenerationResponse {
+  openingText: string;
+}
+
 export interface SaveMeetingPlanRequest {
   denId: string;
   title: string;
   plannedDate: string | null;
-  monthKey: string;
-  monthLabel: string;
-  theme: string;
   payload: MeetingPlan;
 }
 
 export interface SavedMeetingPlan {
   id: string;
   denId: string;
-  rankId: string;
-  adventureId: string;
   title: string;
   plannedDate: string | null;
-  monthKey: string;
-  monthLabel: string;
-  theme: string;
   payload: MeetingPlan;
   recap: MeetingRecap | null;
   createdAt: string;
-}
-
-export interface YearPlanMonth {
-  monthKey: string;
-  monthLabel: string;
-  theme: string;
-  items: SavedMeetingPlan[];
-}
-
-export interface YearPlan {
-  den: DenProfile;
-  trailProgress: AdventureTrailProgress;
-  months: YearPlanMonth[];
 }
 
 export interface AdventureBundle {
