@@ -1,8 +1,8 @@
-import type { Activity, Adventure, DenProfile, PackWorkspace, Rank, Requirement } from "./types.js";
-import { makeId, slugify } from "./utils.js";
+import type { Activity, ActivityDirections, Adventure, DenProfile, PackWorkspace, Rank, Requirement } from "./types.js";
+import { newGuid, slugify } from "./utils.js";
 
 const rank: Rank = {
-  id: "lion",
+  id: newGuid(),
   name: "Lion",
   grade: "Kindergarten",
   slug: "lion",
@@ -10,14 +10,13 @@ const rank: Rank = {
 };
 
 const workspace: PackWorkspace = {
-  id: "pack-1",
-  name: "Pack 110 Planning Workspace",
-  planningNotes: "Internal planning space for den leaders and pack adults."
+  id: newGuid(),
+  name: "Pack 110 Planning Workspace"
 };
 
 const denProfiles: DenProfile[] = [
   {
-    id: "lion-den-1",
+    id: newGuid(),
     workspaceId: workspace.id,
     rankId: rank.id,
     name: "Lion Den A",
@@ -29,7 +28,7 @@ const denProfiles: DenProfile[] = [
 
 const adventures: Adventure[] = [
   {
-    id: makeId(rank.id, "bobcat-lion"),
+    id: newGuid(),
     rankId: rank.id,
     name: "Bobcat Lion",
     slug: "bobcat-lion",
@@ -39,7 +38,7 @@ const adventures: Adventure[] = [
     snapshot: "The Bobcat Adventure is the first required Adventure on the trail to earn the Lion badge of rank."
   },
   {
-    id: makeId(rank.id, "fun-on-the-run"),
+    id: newGuid(),
     rankId: rank.id,
     name: "Fun on the Run",
     slug: "fun-on-the-run",
@@ -49,7 +48,7 @@ const adventures: Adventure[] = [
     snapshot: "Fun on the Run helps Lions build healthy habits through movement and simple fitness play."
   },
   {
-    id: makeId(rank.id, "mountain-lion"),
+    id: newGuid(),
     rankId: rank.id,
     name: "Mountain Lion",
     slug: "mountain-lion",
@@ -62,19 +61,19 @@ const adventures: Adventure[] = [
 
 const bobcatRequirements: Requirement[] = [
   {
-    id: makeId(adventures[0].id, "req-1"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementNumber: 1,
     text: "Get to know the members of your den."
   },
   {
-    id: makeId(adventures[0].id, "req-2"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementNumber: 2,
     text: "Have your Lion adult partner or den leader read the Scout Law to you. Demonstrate your understanding of being friendly."
   },
   {
-    id: makeId(adventures[0].id, "req-3"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementNumber: 3,
     text: "Share a time when you have demonstrated the Cub Scout motto “Do Your Best.”"
@@ -83,13 +82,13 @@ const bobcatRequirements: Requirement[] = [
 
 const funRunRequirements: Requirement[] = [
   {
-    id: makeId(adventures[1].id, "req-1"),
+    id: newGuid(),
     adventureId: adventures[1].id,
     requirementNumber: 1,
     text: "With your den, learn and demonstrate a few ways to warm up before moving."
   },
   {
-    id: makeId(adventures[1].id, "req-2"),
+    id: newGuid(),
     adventureId: adventures[1].id,
     requirementNumber: 2,
     text: "With your den, try movement games that build balance, speed, or coordination."
@@ -98,13 +97,13 @@ const funRunRequirements: Requirement[] = [
 
 const mountainRequirements: Requirement[] = [
   {
-    id: makeId(adventures[2].id, "req-1"),
+    id: newGuid(),
     adventureId: adventures[2].id,
     requirementNumber: 1,
     text: "Explore an outdoor space and talk about what you notice."
   },
   {
-    id: makeId(adventures[2].id, "req-2"),
+    id: newGuid(),
     adventureId: adventures[2].id,
     requirementNumber: 2,
     text: "Practice being prepared for a simple outdoor activity."
@@ -113,9 +112,52 @@ const mountainRequirements: Requirement[] = [
 
 const requirements: Requirement[] = [...bobcatRequirements, ...funRunRequirements, ...mountainRequirements];
 
+const denDoodleDirections: ActivityDirections = {
+  atHomeOption: null,
+  before: {
+    heading: "Before the meeting",
+    steps: [
+      { text: "Set out the boards and craft supplies.", bullets: ["Keep scraps sorted.", "Lay out one piece per scout."] }
+    ]
+  },
+  during: {
+    heading: "During the activity",
+    steps: [
+      {
+        text: "Build the den doodle together.",
+        bullets: ["Let each scout add one part.", "Pause to explain how it will be used each week."]
+      }
+    ]
+  },
+  after: {
+    heading: "After the activity",
+    steps: [
+      { text: "Display the finished piece.", bullets: ["Use it at each meeting.", "Note who may need extra encouragement."] }
+    ]
+  }
+};
+
+const animalWarmupsDirections: ActivityDirections = {
+  atHomeOption: null,
+  before: null,
+  during: {
+    heading: "During the activity",
+    steps: [
+      {
+        text: "Lead the den through a few warmup moves.",
+        bullets: ["Use animal motions.", "Keep the pace brisk and cheerful."]
+      }
+    ]
+  },
+  after: {
+    heading: "After the activity",
+    steps: [{ text: "Finish with a quick check-in.", bullets: ["Ask what movement felt easiest.", "Remind scouts to stay hydrated."] }]
+  }
+};
+
 const activities: Activity[] = [
   {
-    id: makeId(adventures[0].id, "den-doodle-lion"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementId: bobcatRequirements[0].id,
     name: "Den Doodle Lion",
@@ -127,13 +169,15 @@ const activities: Activity[] = [
     supplyLevel: 4,
     prepLevel: 2,
     durationMinutes: 15,
+    supplyNote: "Supply List Note: Den doodles can be made from different materials and there are several different designs. This is one example of a den doodle that can be made. It stands on its own and is four feet tall.",
     materials: ["Simple craft supplies", "Large display space"],
-    notes: "Bring simple craft supplies and display the doodle where Lions can add to it.",
+    directions: denDoodleDirections,
+    hasAdditionalResources: true,
     previewDetails:
       "Use a den doodle to welcome scouts, track attendance, and give everyone a visible place in the den. Prep simple craft materials and leave time for each scout to add their piece."
   },
   {
-    id: makeId(adventures[0].id, "den-flag-lion"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementId: bobcatRequirements[0].id,
     name: "Den Flag Lion",
@@ -146,12 +190,11 @@ const activities: Activity[] = [
     prepLevel: 2,
     durationMinutes: 15,
     materials: ["Paper or cardstock", "Markers or crayons", "Tape or glue"],
-    notes: "Good alternate for requirement 1 if the den wants a collaborative craft.",
     previewDetails:
       "Make a simple den flag together so each scout contributes a name, symbol, or color. This is a strong alternate for getting to know den members while making something the group can reuse."
   },
   {
-    id: makeId(adventures[0].id, "the-compliment-game"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementId: bobcatRequirements[1].id,
     name: "The Compliment Game",
@@ -164,12 +207,11 @@ const activities: Activity[] = [
     prepLevel: 1,
     durationMinutes: 10,
     materials: ["Open circle seating", "Optional talking prompt card"],
-    notes: "Great for circle time and practicing friendly behavior.",
     previewDetails:
       "Run this as a short circle game where each scout gives a compliment to another scout. It works well as a discussion-based activity with minimal supplies."
   },
   {
-    id: makeId(adventures[0].id, "when-am-i-doing-my-best"),
+    id: newGuid(),
     adventureId: adventures[0].id,
     requirementId: bobcatRequirements[2].id,
     name: "When Am I Doing My Best?",
@@ -182,12 +224,11 @@ const activities: Activity[] = [
     prepLevel: 1,
     durationMinutes: 10,
     materials: ["Prompt questions", "Scout Law reference"],
-    notes: "Invite each scout to share one example from school or home.",
     previewDetails:
       "Use simple prompts to help scouts identify what doing their best looks like at school, at home, and in the den. Encourage each scout to share one example."
   },
   {
-    id: makeId(adventures[1].id, "animal-warmups"),
+    id: newGuid(),
     adventureId: adventures[1].id,
     requirementId: funRunRequirements[0].id,
     name: "Animal Warmups",
@@ -199,13 +240,14 @@ const activities: Activity[] = [
     supplyLevel: 1,
     prepLevel: 1,
     durationMinutes: 10,
+    supplyNote: "The activity works best with open movement space and optionally some music or a timer.",
     materials: ["Open floor space", "Optional music or timer"],
-    notes: "Use this first to get energy focused before active games.",
+    directions: animalWarmupsDirections,
     previewDetails:
       "Lead the den through a quick series of animal-themed warmups like bear crawls, flamingo balance, and frog jumps to make stretching feel playful."
   },
   {
-    id: makeId(adventures[1].id, "balance-trail"),
+    id: newGuid(),
     adventureId: adventures[1].id,
     requirementId: funRunRequirements[1].id,
     name: "Balance Trail",
@@ -218,12 +260,11 @@ const activities: Activity[] = [
     prepLevel: 2,
     durationMinutes: 15,
     materials: ["Tape or cones", "Open floor space"],
-    notes: "Tape lines on the floor or use cones outdoors.",
     previewDetails:
       "Set up a short balance and movement path that lets scouts practice control, speed changes, and coordination while cheering each other on."
   },
   {
-    id: makeId(adventures[1].id, "relay-cheers"),
+    id: newGuid(),
     adventureId: adventures[1].id,
     requirementId: funRunRequirements[1].id,
     name: "Relay Cheers",
@@ -236,12 +277,11 @@ const activities: Activity[] = [
     prepLevel: 1,
     durationMinutes: 12,
     materials: ["Outdoor running space", "Simple relay markers"],
-    notes: "Strong alternative when the den has room to run.",
     previewDetails:
       "Use a short relay with simple tasks and built-in cheers so scouts move quickly and celebrate one another without making the game too competitive."
   },
   {
-    id: makeId(adventures[2].id, "nature-noticing-walk"),
+    id: newGuid(),
     adventureId: adventures[2].id,
     requirementId: mountainRequirements[0].id,
     name: "Nature Noticing Walk",
@@ -254,12 +294,11 @@ const activities: Activity[] = [
     prepLevel: 1,
     durationMinutes: 15,
     materials: ["Outdoor space", "Optional nature cards"],
-    notes: "Good for a calm outdoor reset.",
     previewDetails:
       "Walk slowly through an outdoor space and ask scouts to point out what they hear, see, and smell so they practice observation without rushing."
   },
   {
-    id: makeId(adventures[2].id, "what-goes-outside"),
+    id: newGuid(),
     adventureId: adventures[2].id,
     requirementId: mountainRequirements[1].id,
     name: "What Goes Outside?",
@@ -272,7 +311,6 @@ const activities: Activity[] = [
     prepLevel: 1,
     durationMinutes: 10,
     materials: ["Pictures or actual gear examples"],
-    notes: "Useful if weather moves the den indoors.",
     previewDetails:
       "Use pictures or actual gear to help scouts talk about what they should wear or carry for a simple outdoor walk, even if the conversation happens inside."
   }
