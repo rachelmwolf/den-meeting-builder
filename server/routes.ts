@@ -1,10 +1,9 @@
 import express from "express";
 import type { Request, Response } from "express";
 import {
+  getAdminCurriculumDetail,
   getAdventureBundles,
   getAdventureTrailData,
-  buildYearPlan,
-  duplicateMeetingPlan,
   getContentStatus,
   getDenProfile,
   getWorkspace,
@@ -12,15 +11,21 @@ import {
   listAdventuresForRank,
   listDenProfiles,
   listRequirementsForAdventureIds,
+  listAdminCurriculumItems,
   listSavedPlansForDen,
+  saveAdminCurriculumRecord,
   saveMeetingPlan,
   saveMeetingRecap
 } from "./db.js";
 import { buildMeetingPlan, swapMeetingActivity } from "../planner/buildMeetingPlan.js";
+import { generateOpeningScript } from "./openai.js";
 import type {
+  AdminCurriculumWrite,
   ActivitySwapRequest,
+  OpeningGenerationRequest,
   MeetingPlan,
   MeetingRequest,
+  CurriculumEntityType,
   SaveMeetingPlanRequest,
   SaveRecapRequest
 } from "../shared/types.js";
@@ -41,6 +46,43 @@ apiRouter.get("/dens", (_req, res) => {
 
 apiRouter.get("/content-status", (_req, res) => {
   res.json(getContentStatus());
+});
+
+apiRouter.get("/admin/curriculum", (_req, res) => {
+  res.json({ items: listAdminCurriculumItems() });
+});
+
+apiRouter.get("/admin/curriculum/:entity/:id", (req, res) => {
+  const entity = req.params.entity as CurriculumEntityType;
+  if (!["ranks", "adventures", "requirements", "activities"].includes(entity)) {
+    res.status(400).json({ error: "Invalid curriculum entity" });
+    return;
+  }
+  const detail = getAdminCurriculumDetail(entity, req.params.id);
+  if (!detail) {
+    res.status(404).json({ error: "Curriculum record not found" });
+    return;
+  }
+  res.json(detail);
+});
+
+apiRouter.post("/admin/curriculum/:entity", express.json(), (req: Request, res: Response) => {
+  const input = req.body as AdminCurriculumWrite;
+  const entity = req.params.entity as CurriculumEntityType;
+  if (!["ranks", "adventures", "requirements", "activities"].includes(entity) || input.entityType !== entity) {
+    res.status(400).json({ error: "Invalid curriculum entity" });
+    return;
+  }
+  try {
+    const saved = saveAdminCurriculumRecord(input);
+    if (!saved) {
+      res.status(404).json({ error: "Curriculum record not found" });
+      return;
+    }
+    res.json(saved);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Unable to save curriculum record" });
+  }
 });
 
 apiRouter.get("/dens/:denId/adventures", (req, res) => {
@@ -72,15 +114,6 @@ apiRouter.get("/dens/:denId/requirements", (req, res) => {
     .map((value) => value.trim())
     .filter(Boolean);
   res.json(listRequirementsForAdventureIds(rawIds));
-});
-
-apiRouter.get("/dens/:denId/year-plan", (req, res) => {
-  const yearPlan = buildYearPlan(req.params.denId);
-  if (!yearPlan) {
-    res.status(404).json({ error: "Den not found" });
-    return;
-  }
-  res.json(yearPlan);
 });
 
 apiRouter.get("/dens/:denId/saved-plans", (req, res) => {
@@ -116,17 +149,24 @@ apiRouter.post("/plans/swap", express.json(), (req: Request, res: Response) => {
   res.json(swapMeetingActivity(den, rank, bundles, plan, agendaItemId, selectedActivityId));
 });
 
+apiRouter.post("/plans/opening", express.json(), async (req: Request, res: Response) => {
+  const { prompt } = req.body as OpeningGenerationRequest;
+  if (!prompt?.id || !prompt?.version || !prompt?.variables) {
+    res.status(400).json({ error: "Opening prompt is required" });
+    return;
+  }
+
+  try {
+    const result = await generateOpeningScript({ prompt });
+    res.json(result);
+  } catch (error) {
+    res.status(503).json({
+      error: error instanceof Error ? error.message : "Unable to generate opening right now."
+    });
+  }
+});
+
 apiRouter.post("/plans/recap", express.json(), (req: Request, res: Response) => {
   const input = req.body as SaveRecapRequest;
   res.json(saveMeetingRecap(input));
-});
-
-apiRouter.post("/plans/:savedPlanId/duplicate", express.json(), (req: Request, res: Response) => {
-  const { monthKey, monthLabel, theme } = req.body as { monthKey: string; monthLabel: string; theme: string };
-  const savedPlan = duplicateMeetingPlan(String(req.params.savedPlanId), monthKey, monthLabel, theme);
-  if (!savedPlan) {
-    res.status(404).json({ error: "Saved plan not found" });
-    return;
-  }
-  res.json(savedPlan);
 });
