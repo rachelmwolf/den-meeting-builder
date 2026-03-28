@@ -3,6 +3,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type {
   Activity,
+  AdminActivityRecord,
+  AdminAdventureRecord,
+  AdminCurriculumDetail,
+  AdminCurriculumListItem,
+  AdminCurriculumWrite,
+  AdminRankRecord,
+  AdminRequirementRecord,
   ActivityFieldCoverage,
   Adventure,
   AdventureBundle,
@@ -13,24 +20,27 @@ import type {
   AdventureTrailProgressBucket,
   ContentStatus,
   DenProfile,
+  CurriculumEntityType,
   ImportedRankStatus,
   MeetingPlan,
   MeetingRecap,
   PackWorkspace,
   Rank,
   Requirement,
+  SourceSnapshot,
   SaveMeetingPlanRequest,
   SaveRecapRequest,
-  SavedMeetingPlan,
-  YearPlan,
-  YearPlanMonth
+  SavedMeetingPlan
 } from "../shared/types.js";
 import { demoContent } from "../shared/demo.js";
-import { normalizeAdventureTrailBucket } from "../shared/utils.js";
+import { NO_SUPPLIES_SENTINEL, newGuid, normalizeAdventureTrailBucket } from "../shared/utils.js";
 
 const dataDir = join(process.cwd(), "data");
 const defaultDbPath = process.env.VITEST
-  ? join(dataDir, "den-meeting-builder.test.sqlite")
+  ? join(
+      dataDir,
+      `den-meeting-builder.test-${process.env.VITEST_WORKER_ID ?? process.pid}.sqlite`
+    )
   : join(dataDir, "den-meeting-builder.sqlite");
 const dbPath = process.env.DEN_MEETING_DB_PATH ?? defaultDbPath;
 
@@ -44,8 +54,7 @@ export function initDb(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS workspaces (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      planning_notes TEXT NOT NULL
+      name TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS ranks (
       id TEXT PRIMARY KEY,
@@ -71,7 +80,9 @@ export function initDb(): void {
       kind TEXT NOT NULL,
       category TEXT NOT NULL,
       source_url TEXT NOT NULL,
-      snapshot TEXT NOT NULL
+      snapshot TEXT NOT NULL,
+      safety_moment TEXT,
+      alternate_path TEXT
     );
     CREATE TABLE IF NOT EXISTS requirements (
       id TEXT PRIMARY KEY,
@@ -87,28 +98,22 @@ export function initDb(): void {
       slug TEXT NOT NULL,
       source_url TEXT NOT NULL,
       summary TEXT NOT NULL,
-      location TEXT NOT NULL,
       meeting_space TEXT,
       energy_level INTEGER,
       supply_level INTEGER,
       prep_level INTEGER,
-      prep_minutes INTEGER,
       duration_minutes INTEGER,
-      difficulty INTEGER,
       materials_json TEXT NOT NULL DEFAULT '[]',
-      notes TEXT NOT NULL,
-      preview_details TEXT NOT NULL DEFAULT ''
+      preview_details TEXT NOT NULL DEFAULT '',
+      supply_note TEXT,
+      directions_json TEXT,
+      has_additional_resources INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS meeting_plans (
       id TEXT PRIMARY KEY,
       den_id TEXT NOT NULL REFERENCES den_profiles(id),
-      rank_id TEXT NOT NULL REFERENCES ranks(id),
-      adventure_id TEXT NOT NULL REFERENCES adventures(id),
       title TEXT NOT NULL,
       planned_date TEXT,
-      month_key TEXT NOT NULL,
-      month_label TEXT NOT NULL,
-      theme TEXT NOT NULL,
       payload_json TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
@@ -128,30 +133,230 @@ export function initDb(): void {
       fetched_at TEXT NOT NULL,
       PRIMARY KEY (entity_type, entity_id)
     );
+    CREATE INDEX IF NOT EXISTS idx_den_profiles_rank_id ON den_profiles(rank_id);
+    CREATE INDEX IF NOT EXISTS idx_adventures_rank_id ON adventures(rank_id);
+    CREATE INDEX IF NOT EXISTS idx_requirements_adventure_id ON requirements(adventure_id);
+    CREATE INDEX IF NOT EXISTS idx_activities_adventure_id ON activities(adventure_id);
+    CREATE INDEX IF NOT EXISTS idx_activities_requirement_id ON activities(requirement_id);
+    CREATE INDEX IF NOT EXISTS idx_meeting_plans_den_id ON meeting_plans(den_id);
+    CREATE INDEX IF NOT EXISTS idx_source_snapshots_entity_type_id ON source_snapshots(entity_type, entity_id);
   `);
-  ensureColumn("activities", "preview_details", "TEXT NOT NULL DEFAULT ''");
-  ensureColumn("activities", "meeting_space", "TEXT");
-  ensureColumn("activities", "energy_level", "INTEGER");
-  ensureColumn("activities", "supply_level", "INTEGER");
-  ensureColumn("activities", "prep_level", "INTEGER");
-  ensureColumn("meeting_plans", "den_id", "TEXT REFERENCES den_profiles(id)");
-  ensureColumn("meeting_plans", "month_key", "TEXT NOT NULL DEFAULT 'unscheduled'");
-  ensureColumn("meeting_plans", "month_label", "TEXT NOT NULL DEFAULT 'Unscheduled'");
-  ensureColumn("meeting_plans", "theme", "TEXT NOT NULL DEFAULT 'General'");
-  ensureColumn("activities", "materials_json", "TEXT NOT NULL DEFAULT '[]'");
+  migrateWorkspacesTable();
+  migrateActivitiesTable();
+  migrateMeetingPlansTable();
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_den_profiles_rank_id ON den_profiles(rank_id);
+    CREATE INDEX IF NOT EXISTS idx_adventures_rank_id ON adventures(rank_id);
+    CREATE INDEX IF NOT EXISTS idx_requirements_adventure_id ON requirements(adventure_id);
+    CREATE INDEX IF NOT EXISTS idx_activities_adventure_id ON activities(adventure_id);
+    CREATE INDEX IF NOT EXISTS idx_activities_requirement_id ON activities(requirement_id);
+    CREATE INDEX IF NOT EXISTS idx_meeting_plans_den_id ON meeting_plans(den_id);
+    CREATE INDEX IF NOT EXISTS idx_source_snapshots_entity_type_id ON source_snapshots(entity_type, entity_id);
+  `);
+  normalizeImportedDenProfiles();
 }
 
-function ensureColumn(tableName: string, columnName: string, definition: string): void {
+function tableHasColumn(tableName: string, columnName: string): boolean {
   const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
-  if (columns.some((column) => column.name === columnName)) {
+  return columns.some((column) => column.name === columnName);
+}
+
+function withSchemaMigration(mutator: () => void): void {
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    mutator();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+function legacyPrepMinutesToLevel(prepMinutes: unknown): number | null {
+  if (prepMinutes === null || prepMinutes === undefined || prepMinutes === "") {
+    return null;
+  }
+  const minutes = Number(prepMinutes);
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    return null;
+  }
+  if (minutes <= 5) return 1;
+  if (minutes <= 15) return 2;
+  if (minutes <= 30) return 3;
+  if (minutes <= 60) return 4;
+  return 5;
+}
+
+function migrateWorkspacesTable(): void {
+  if (!tableHasColumn("workspaces", "planning_notes")) {
     return;
   }
-  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  const rows = db.prepare("SELECT id, name FROM workspaces").all() as Array<{ id: unknown; name: unknown }>;
+  withSchemaMigration(() => {
+    db.exec(`
+      CREATE TABLE workspaces_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+    `);
+    const insert = db.prepare("INSERT INTO workspaces_new (id, name) VALUES (?, ?)");
+    for (const row of rows) {
+      insert.run(String(row.id), String(row.name));
+    }
+    db.exec(`
+      DROP TABLE workspaces;
+      ALTER TABLE workspaces_new RENAME TO workspaces;
+    `);
+  });
+}
+
+function migrateActivitiesTable(): void {
+  if (
+    !tableHasColumn("activities", "location") &&
+    !tableHasColumn("activities", "prep_minutes") &&
+    !tableHasColumn("activities", "difficulty") &&
+    !tableHasColumn("activities", "notes")
+  ) {
+    return;
+  }
+  const rows = db.prepare("SELECT * FROM activities").all() as Array<Record<string, unknown>>;
+  withSchemaMigration(() => {
+    db.exec(`
+      CREATE TABLE activities_new (
+        id TEXT PRIMARY KEY,
+        adventure_id TEXT NOT NULL REFERENCES adventures(id),
+        requirement_id TEXT REFERENCES requirements(id),
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        meeting_space TEXT,
+        energy_level INTEGER,
+        supply_level INTEGER,
+        prep_level INTEGER,
+        duration_minutes INTEGER,
+        materials_json TEXT NOT NULL DEFAULT '[]',
+        preview_details TEXT NOT NULL DEFAULT '',
+        supply_note TEXT,
+        directions_json TEXT,
+        has_additional_resources INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    const insert = db.prepare(`
+      INSERT INTO activities_new (
+        id, adventure_id, requirement_id, name, slug, source_url, summary,
+        meeting_space, energy_level, supply_level, prep_level, duration_minutes,
+        materials_json, preview_details, supply_note, directions_json, has_additional_resources
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      const meetingSpace = row.meeting_space
+        ? String(row.meeting_space)
+        : row.location
+          ? String(fallbackMeetingSpace(String(row.location)))
+          : null;
+      const energyLevel =
+        row.energy_level === null || row.energy_level === undefined
+          ? row.difficulty === null || row.difficulty === undefined
+            ? null
+            : Number(row.difficulty)
+          : Number(row.energy_level);
+      const prepLevel =
+        row.prep_level === null || row.prep_level === undefined
+          ? legacyPrepMinutesToLevel(row.prep_minutes)
+          : Number(row.prep_level);
+      insert.run(
+        String(row.id),
+        String(row.adventure_id),
+        row.requirement_id === null || row.requirement_id === undefined ? null : String(row.requirement_id),
+        String(row.name),
+        String(row.slug),
+        String(row.source_url),
+        String(row.summary),
+        meetingSpace,
+        energyLevel,
+        row.supply_level === null || row.supply_level === undefined ? null : Number(row.supply_level),
+        prepLevel,
+        row.duration_minutes === null || row.duration_minutes === undefined ? null : Number(row.duration_minutes),
+        String(row.materials_json ?? "[]"),
+        String(row.preview_details ?? ""),
+        row.supply_note === null || row.supply_note === undefined ? null : String(row.supply_note),
+        row.directions_json === null || row.directions_json === undefined ? null : String(row.directions_json),
+        Number(row.has_additional_resources ?? 0) ? 1 : 0
+      );
+    }
+    db.exec(`
+      DROP TABLE activities;
+      ALTER TABLE activities_new RENAME TO activities;
+    `);
+  });
+}
+
+function migrateMeetingPlansTable(): void {
+  if (!tableHasColumn("meeting_plans", "rank_id") && !tableHasColumn("meeting_plans", "month_key") && !tableHasColumn("meeting_plans", "theme")) {
+    return;
+  }
+  const rows = db.prepare("SELECT id, den_id, title, planned_date, payload_json, created_at FROM meeting_plans").all() as Array<{
+    id: unknown;
+    den_id: unknown;
+    title: unknown;
+    planned_date: unknown;
+    payload_json: unknown;
+    created_at: unknown;
+  }>;
+  withSchemaMigration(() => {
+    db.exec(`
+      CREATE TABLE meeting_plans_new (
+        id TEXT PRIMARY KEY,
+        den_id TEXT NOT NULL REFERENCES den_profiles(id),
+        title TEXT NOT NULL,
+        planned_date TEXT,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    const insert = db.prepare(
+      "INSERT INTO meeting_plans_new (id, den_id, title, planned_date, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    for (const row of rows) {
+      insert.run(
+        String(row.id),
+        String(row.den_id),
+        String(row.title),
+        row.planned_date === null || row.planned_date === undefined ? null : String(row.planned_date),
+        String(row.payload_json),
+        String(row.created_at)
+      );
+    }
+    db.exec(`
+      DROP TABLE meeting_plans;
+      ALTER TABLE meeting_plans_new RENAME TO meeting_plans;
+    `);
+  });
 }
 
 function countRows(tableName: string): number {
   const row = db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).get() as { count: number };
   return row.count;
+}
+
+function normalizeImportedDenProfiles(): void {
+  db.prepare(`
+    UPDATE den_profiles
+    SET name = (
+      SELECT ranks.name || ' Den'
+      FROM ranks
+      WHERE ranks.id = den_profiles.rank_id
+    )
+    WHERE name = (
+      SELECT ranks.name || ' Imported Den'
+      FROM ranks
+      WHERE ranks.id = den_profiles.rank_id
+    )
+  `).run();
 }
 
 function mapRank(row: Record<string, unknown>): Rank {
@@ -185,7 +390,9 @@ function mapAdventure(row: Record<string, unknown>): Adventure {
     kind: row.kind as Adventure["kind"],
     category: String(row.category),
     sourceUrl: String(row.source_url),
-    snapshot: String(row.snapshot)
+    snapshot: String(row.snapshot),
+    safetyMoment: row.safety_moment === null || row.safety_moment === undefined ? undefined : String(row.safety_moment),
+    alternatePath: row.alternate_path === null || row.alternate_path === undefined ? undefined : String(row.alternate_path)
   };
 }
 
@@ -209,6 +416,8 @@ function mapActivity(row: Record<string, unknown>): Activity {
   } catch {
     materials = [];
   }
+  const supplyNote = row.supply_note === null || row.supply_note === undefined ? undefined : String(row.supply_note);
+  const directions = parseActivityDirections(row.directions_json);
   return {
     id: String(row.id),
     adventureId: String(row.adventure_id),
@@ -217,30 +426,114 @@ function mapActivity(row: Record<string, unknown>): Activity {
     slug: String(row.slug),
     sourceUrl: String(row.source_url),
     summary: String(row.summary),
-    meetingSpace: row.meeting_space ? String(row.meeting_space) as Activity["meetingSpace"] : fallbackMeetingSpace(String(row.location ?? "")),
-    energyLevel: row.energy_level === null || row.energy_level === undefined
-      ? row.difficulty === null || row.difficulty === undefined
-        ? null
-        : Number(row.difficulty)
-      : Number(row.energy_level),
+    meetingSpace: row.meeting_space ? (String(row.meeting_space) as Activity["meetingSpace"]) : "unknown",
+    energyLevel: row.energy_level === null || row.energy_level === undefined ? null : Number(row.energy_level),
     supplyLevel: row.supply_level === null || row.supply_level === undefined ? null : Number(row.supply_level),
     prepLevel: row.prep_level === null || row.prep_level === undefined ? null : Number(row.prep_level),
     durationMinutes: row.duration_minutes === null ? null : Number(row.duration_minutes),
     materials,
-    notes: String(row.notes),
-    previewDetails: String(row.preview_details ?? "")
+    previewDetails: String(row.preview_details ?? ""),
+    supplyNote,
+    directions,
+    hasAdditionalResources: Boolean(Number(row.has_additional_resources ?? 0))
   };
 }
 
-function countMaterials(activityRows: Array<Record<string, unknown>>): number {
-  return activityRows.filter((row) => {
-    try {
-      const materials = JSON.parse(String(row.materials_json ?? "[]")) as unknown[];
-      return Array.isArray(materials) && materials.length > 0;
-    } catch {
-      return false;
+function parseActivityDirections(value: unknown): Activity["directions"] {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== "object") {
+      return undefined;
     }
-  }).length;
+    return parsed as NonNullable<Activity["directions"]>;
+  } catch {
+    return undefined;
+  }
+}
+
+function mapSourceSnapshot(row: Record<string, unknown> | undefined): SourceSnapshot | null {
+  if (!row) {
+    return null;
+  }
+  return {
+    sourceUrl: String(row.source_url ?? ""),
+    rawHtml: String(row.raw_html ?? ""),
+    fetchedAt: String(row.fetched_at ?? "")
+  };
+}
+
+function getSourceSnapshot(entityType: "rank" | "adventure" | "activity", entityId: string): SourceSnapshot | null {
+  const row = db
+    .prepare(
+      "SELECT source_url, raw_html, fetched_at FROM source_snapshots WHERE entity_type = ? AND entity_id = ?"
+    )
+    .get(entityType, entityId) as Record<string, unknown> | undefined;
+  return mapSourceSnapshot(row);
+}
+
+function buildAdminRankSummary(row: Record<string, unknown>): AdminCurriculumListItem {
+  const refreshedAt = row.refreshed_at ? String(row.refreshed_at) : null;
+  const adventureCount = Number(row.adventure_count ?? 0);
+  const denCount = Number(row.den_count ?? 0);
+  return {
+    entityType: "ranks",
+    id: String(row.id),
+    title: String(row.name),
+    subtitle: `Grade ${String(row.grade)}`,
+    sourceUrl: String(row.source_url),
+    refreshedAt,
+    tags: [`${adventureCount} adventures`, `${denCount} dens`]
+  };
+}
+
+function buildAdminAdventureSummary(row: Record<string, unknown>): AdminCurriculumListItem {
+  const refreshedAt = row.refreshed_at ? String(row.refreshed_at) : null;
+  const requirementCount = Number(row.requirement_count ?? 0);
+  const activityCount = Number(row.activity_count ?? 0);
+  return {
+    entityType: "adventures",
+    id: String(row.id),
+    title: String(row.name),
+    subtitle: `${String(row.rank_name)} · ${String(row.kind)} · ${String(row.category)}`,
+    sourceUrl: String(row.source_url),
+    refreshedAt,
+    tags: [`${requirementCount} requirements`, `${activityCount} activities`]
+  };
+}
+
+function buildAdminRequirementSummary(row: Record<string, unknown>): AdminCurriculumListItem {
+  const refreshedAt = row.refreshed_at ? String(row.refreshed_at) : null;
+  const activityCount = Number(row.activity_count ?? 0);
+  return {
+    entityType: "requirements",
+    id: String(row.id),
+    title: `Requirement ${Number(row.requirement_number)}`,
+    subtitle: `${String(row.rank_name)} · ${String(row.adventure_name)}`,
+    sourceUrl: String(row.source_url),
+    refreshedAt,
+    tags: [`${activityCount} activities`]
+  };
+}
+
+function buildAdminActivitySummary(row: Record<string, unknown>): AdminCurriculumListItem {
+  const refreshedAt = row.refreshed_at ? String(row.refreshed_at) : null;
+  const meetingSpace = String(row.meeting_space ?? "unknown");
+  const energyLevel = row.energy_level === null || row.energy_level === undefined ? "?" : `${Number(row.energy_level)}/5`;
+  const supplyLevel = row.supply_level === null || row.supply_level === undefined ? "?" : `${Number(row.supply_level)}/5`;
+  const prepLevel = row.prep_level === null || row.prep_level === undefined ? "?" : `${Number(row.prep_level)}/5`;
+  const requirementNumber = row.requirement_number === null || row.requirement_number === undefined ? null : Number(row.requirement_number);
+  return {
+    entityType: "activities",
+    id: String(row.id),
+    title: String(row.name),
+    subtitle: `${String(row.rank_name)} · ${String(row.adventure_name)}${requirementNumber ? ` · Requirement ${requirementNumber}` : ""}`,
+    sourceUrl: String(row.source_url),
+    refreshedAt,
+    tags: [meetingSpace, `Energy ${energyLevel}`, `Supplies ${supplyLevel}`, `Prep ${prepLevel}`]
+  };
 }
 
 function fallbackMeetingSpace(value: string): Activity["meetingSpace"] {
@@ -276,12 +569,11 @@ function mapRecap(row: Record<string, unknown> | undefined): MeetingRecap | null
 
 export function upsertWorkspace(workspace: PackWorkspace): void {
   db.prepare(`
-    INSERT INTO workspaces (id, name, planning_notes)
-    VALUES (?, ?, ?)
+    INSERT INTO workspaces (id, name)
+    VALUES (?, ?)
     ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      planning_notes = excluded.planning_notes
-  `).run(workspace.id, workspace.name, workspace.planningNotes);
+      name = excluded.name
+  `).run(workspace.id, workspace.name);
 }
 
 export function upsertRank(rank: Rank): void {
@@ -327,10 +619,10 @@ export function ensureDefaultDenProfileForRank(rank: Rank): DenProfile {
   }
   const workspace = getWorkspace() ?? demoContent.workspace;
   const den: DenProfile = {
-    id: `${rank.id}-imported-den`,
+    id: newGuid(),
     workspaceId: workspace.id,
     rankId: rank.id,
-    name: `${rank.name} Imported Den`,
+    name: `${rank.name} Den`,
     leaderName: "Imported Content",
     meetingLocation: "Set meeting location",
     typicalMeetingDay: "Set meeting day"
@@ -342,8 +634,8 @@ export function ensureDefaultDenProfileForRank(rank: Rank): DenProfile {
 
 export function upsertAdventure(adventure: Adventure): void {
   db.prepare(`
-    INSERT INTO adventures (id, rank_id, name, slug, kind, category, source_url, snapshot)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO adventures (id, rank_id, name, slug, kind, category, source_url, snapshot, safety_moment, alternate_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rank_id = excluded.rank_id,
       name = excluded.name,
@@ -351,7 +643,9 @@ export function upsertAdventure(adventure: Adventure): void {
       kind = excluded.kind,
       category = excluded.category,
       source_url = excluded.source_url,
-      snapshot = excluded.snapshot
+      snapshot = excluded.snapshot,
+      safety_moment = excluded.safety_moment,
+      alternate_path = excluded.alternate_path
   `).run(
     adventure.id,
     adventure.rankId,
@@ -360,7 +654,9 @@ export function upsertAdventure(adventure: Adventure): void {
     adventure.kind,
     adventure.category,
     adventure.sourceUrl,
-    adventure.snapshot
+    adventure.snapshot,
+    adventure.safetyMoment ?? null,
+    adventure.alternatePath ?? null
   );
 }
 
@@ -378,10 +674,11 @@ export function upsertRequirement(requirement: Requirement): void {
 export function upsertActivity(activity: Activity): void {
   db.prepare(`
     INSERT INTO activities (
-      id, adventure_id, requirement_id, name, slug, source_url, summary, location,
-      meeting_space, energy_level, supply_level, prep_level, prep_minutes, duration_minutes, difficulty, materials_json, notes, preview_details
+      id, adventure_id, requirement_id, name, slug, source_url, summary,
+      meeting_space, energy_level, supply_level, prep_level, duration_minutes,
+      materials_json, preview_details, supply_note, directions_json, has_additional_resources
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       adventure_id = excluded.adventure_id,
       requirement_id = excluded.requirement_id,
@@ -389,17 +686,16 @@ export function upsertActivity(activity: Activity): void {
       slug = excluded.slug,
       source_url = excluded.source_url,
       summary = excluded.summary,
-      location = excluded.location,
       meeting_space = excluded.meeting_space,
       energy_level = excluded.energy_level,
       supply_level = excluded.supply_level,
       prep_level = excluded.prep_level,
-      prep_minutes = excluded.prep_minutes,
       duration_minutes = excluded.duration_minutes,
-      difficulty = excluded.difficulty,
       materials_json = excluded.materials_json,
-      notes = excluded.notes,
-      preview_details = excluded.preview_details
+      preview_details = excluded.preview_details,
+      supply_note = excluded.supply_note,
+      directions_json = excluded.directions_json,
+      has_additional_resources = excluded.has_additional_resources
   `).run(
     activity.id,
     activity.adventureId,
@@ -409,16 +705,15 @@ export function upsertActivity(activity: Activity): void {
     activity.sourceUrl,
     activity.summary,
     activity.meetingSpace,
-    activity.meetingSpace,
     activity.energyLevel,
     activity.supplyLevel,
     activity.prepLevel,
-    activity.prepLevel,
     activity.durationMinutes,
-    activity.energyLevel,
     JSON.stringify(activity.materials ?? []),
-    activity.notes,
-    activity.previewDetails
+    activity.previewDetails,
+    activity.supplyNote ?? null,
+    activity.directions ? JSON.stringify(activity.directions) : null,
+    activity.hasAdditionalResources ? 1 : 0
   );
 }
 
@@ -483,8 +778,7 @@ export function getWorkspace(): PackWorkspace | null {
   }
   return {
     id: String(row.id),
-    name: String(row.name),
-    planningNotes: String(row.planning_notes)
+    name: String(row.name)
   };
 }
 
@@ -493,12 +787,15 @@ export function listDenProfiles(): DenProfile[] {
     .prepare(`
       SELECT den_profiles.*
       FROM den_profiles
-      LEFT JOIN (
-        SELECT DISTINCT entity_id AS rank_id
-        FROM source_snapshots
-        WHERE entity_type = 'rank'
-      ) imported ON imported.rank_id = den_profiles.rank_id
-      ORDER BY CASE WHEN imported.rank_id IS NOT NULL THEN 0 ELSE 1 END, den_profiles.name
+      ORDER BY CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM source_snapshots
+          WHERE source_snapshots.entity_type = 'rank'
+            AND source_snapshots.entity_id = den_profiles.rank_id
+        ) THEN 0
+        ELSE 1
+      END, den_profiles.name
     `)
     .all()
     .map((row) => mapDenProfile(row as Record<string, unknown>));
@@ -574,20 +871,41 @@ export function getContentStatus(): ContentStatus {
   const lastRefreshedAt = lastRefreshedRow?.last_refreshed_at ? String(lastRefreshedRow.last_refreshed_at) : null;
   const totalRanks = countRows("ranks");
   const importedRankCount = importedRanks.length;
-  const activityRows = db
+  const activityFieldCoverage: ActivityFieldCoverage = {
+    totalActivities: 0,
+    meetingSpaceCount: 0,
+    energyLevelCount: 0,
+    supplyLevelCount: 0,
+    prepLevelCount: 0,
+    materialsCount: 0
+  };
+  const activityCoverageRow = db
     .prepare(`
-      SELECT meeting_space, energy_level, supply_level, prep_level, materials_json
+      SELECT
+        COUNT(*) AS total_activities,
+        SUM(CASE WHEN meeting_space IS NOT NULL AND meeting_space <> '' THEN 1 ELSE 0 END) AS meeting_space_count,
+        SUM(CASE WHEN energy_level IS NOT NULL THEN 1 ELSE 0 END) AS energy_level_count,
+        SUM(CASE WHEN supply_level IS NOT NULL THEN 1 ELSE 0 END) AS supply_level_count,
+        SUM(CASE WHEN prep_level IS NOT NULL THEN 1 ELSE 0 END) AS prep_level_count,
+        SUM(
+          CASE
+            WHEN materials_json IS NOT NULL
+             AND materials_json <> '[]'
+             AND materials_json <> '["' || ? || '"]'
+            THEN 1 ELSE 0
+          END
+        ) AS materials_count
       FROM activities
     `)
-    .all() as Array<Record<string, unknown>>;
-  const activityFieldCoverage: ActivityFieldCoverage = {
-    totalActivities: activityRows.length,
-    meetingSpaceCount: activityRows.filter((row) => Boolean(row.meeting_space)).length,
-    energyLevelCount: activityRows.filter((row) => row.energy_level !== null && row.energy_level !== undefined).length,
-    supplyLevelCount: activityRows.filter((row) => row.supply_level !== null && row.supply_level !== undefined).length,
-    prepLevelCount: activityRows.filter((row) => row.prep_level !== null && row.prep_level !== undefined).length,
-    materialsCount: countMaterials(activityRows)
-  };
+    .get(NO_SUPPLIES_SENTINEL) as Record<string, unknown> | undefined;
+  if (activityCoverageRow) {
+    activityFieldCoverage.totalActivities = Number(activityCoverageRow.total_activities ?? 0);
+    activityFieldCoverage.meetingSpaceCount = Number(activityCoverageRow.meeting_space_count ?? 0);
+    activityFieldCoverage.energyLevelCount = Number(activityCoverageRow.energy_level_count ?? 0);
+    activityFieldCoverage.supplyLevelCount = Number(activityCoverageRow.supply_level_count ?? 0);
+    activityFieldCoverage.prepLevelCount = Number(activityCoverageRow.prep_level_count ?? 0);
+    activityFieldCoverage.materialsCount = Number(activityCoverageRow.materials_count ?? 0);
+  }
   const datasetMode =
     importedRankCount === 0
       ? "demo"
@@ -601,6 +919,226 @@ export function getContentStatus(): ContentStatus {
     lastRefreshedAt,
     activityFieldCoverage
   };
+}
+
+export function listAdminCurriculumItems(): AdminCurriculumListItem[] {
+  const rankRows = db
+    .prepare(`
+      SELECT ranks.*, COUNT(DISTINCT adventures.id) AS adventure_count, COUNT(DISTINCT den_profiles.id) AS den_count, source_snapshots.fetched_at AS refreshed_at
+      FROM ranks
+      LEFT JOIN adventures ON adventures.rank_id = ranks.id
+      LEFT JOIN den_profiles ON den_profiles.rank_id = ranks.id
+      LEFT JOIN source_snapshots ON source_snapshots.entity_type = 'rank' AND source_snapshots.entity_id = ranks.id
+      GROUP BY ranks.id
+      ORDER BY ranks.name
+    `)
+    .all() as Array<Record<string, unknown>>;
+  const adventureRows = db
+    .prepare(`
+      SELECT adventures.*, ranks.name AS rank_name, COUNT(DISTINCT requirements.id) AS requirement_count, COUNT(DISTINCT activities.id) AS activity_count, source_snapshots.fetched_at AS refreshed_at
+      FROM adventures
+      JOIN ranks ON ranks.id = adventures.rank_id
+      LEFT JOIN requirements ON requirements.adventure_id = adventures.id
+      LEFT JOIN activities ON activities.adventure_id = adventures.id
+      LEFT JOIN source_snapshots ON source_snapshots.entity_type = 'adventure' AND source_snapshots.entity_id = adventures.id
+      GROUP BY adventures.id
+      ORDER BY ranks.name, adventures.kind, adventures.name
+    `)
+    .all() as Array<Record<string, unknown>>;
+  const requirementRows = db
+    .prepare(`
+      SELECT requirements.*, adventures.name AS adventure_name, ranks.name AS rank_name, adventures.source_url AS source_url, source_snapshots.fetched_at AS refreshed_at, COUNT(DISTINCT activities.id) AS activity_count
+      FROM requirements
+      JOIN adventures ON adventures.id = requirements.adventure_id
+      JOIN ranks ON ranks.id = adventures.rank_id
+      LEFT JOIN activities ON activities.requirement_id = requirements.id
+      LEFT JOIN source_snapshots ON source_snapshots.entity_type = 'adventure' AND source_snapshots.entity_id = adventures.id
+      GROUP BY requirements.id
+      ORDER BY ranks.name, adventures.name, requirements.requirement_number
+    `)
+    .all() as Array<Record<string, unknown>>;
+  const activityRows = db
+    .prepare(`
+      SELECT activities.*, adventures.name AS adventure_name, ranks.name AS rank_name, requirements.requirement_number AS requirement_number, source_snapshots.fetched_at AS refreshed_at
+      FROM activities
+      JOIN adventures ON adventures.id = activities.adventure_id
+      JOIN ranks ON ranks.id = adventures.rank_id
+      LEFT JOIN requirements ON requirements.id = activities.requirement_id
+      LEFT JOIN source_snapshots ON source_snapshots.entity_type = 'activity' AND source_snapshots.entity_id = activities.id
+      ORDER BY ranks.name, adventures.name, activities.name
+    `)
+    .all() as Array<Record<string, unknown>>;
+
+  return [
+    ...rankRows.map(buildAdminRankSummary),
+    ...adventureRows.map(buildAdminAdventureSummary),
+    ...requirementRows.map(buildAdminRequirementSummary),
+    ...activityRows.map(buildAdminActivitySummary)
+  ];
+}
+
+function getAdminRankDetail(id: string): AdminCurriculumDetail | null {
+  const row = db
+    .prepare(`
+      SELECT ranks.*, COUNT(DISTINCT adventures.id) AS adventure_count, COUNT(DISTINCT den_profiles.id) AS den_count
+      FROM ranks
+      LEFT JOIN adventures ON adventures.rank_id = ranks.id
+      LEFT JOIN den_profiles ON den_profiles.rank_id = ranks.id
+      WHERE ranks.id = ?
+      GROUP BY ranks.id
+    `)
+    .get(id) as Record<string, unknown> | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    entityType: "ranks",
+    record: {
+      ...mapRank(row),
+      adventureCount: Number(row.adventure_count ?? 0),
+      denCount: Number(row.den_count ?? 0),
+      sourceSnapshot: getSourceSnapshot("rank", id)
+    }
+  };
+}
+
+function getAdminAdventureDetail(id: string): AdminCurriculumDetail | null {
+  const row = db
+    .prepare(`
+      SELECT adventures.*, ranks.name AS rank_name, COUNT(DISTINCT requirements.id) AS requirement_count, COUNT(DISTINCT activities.id) AS activity_count
+      FROM adventures
+      JOIN ranks ON ranks.id = adventures.rank_id
+      LEFT JOIN requirements ON requirements.adventure_id = adventures.id
+      LEFT JOIN activities ON activities.adventure_id = adventures.id
+      WHERE adventures.id = ?
+      GROUP BY adventures.id
+    `)
+    .get(id) as Record<string, unknown> | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    entityType: "adventures",
+    record: {
+      ...mapAdventure(row),
+      rankName: String(row.rank_name),
+      requirementCount: Number(row.requirement_count ?? 0),
+      activityCount: Number(row.activity_count ?? 0),
+      sourceSnapshot: getSourceSnapshot("adventure", id)
+    }
+  };
+}
+
+function getAdminRequirementDetail(id: string): AdminCurriculumDetail | null {
+  const row = db
+    .prepare(`
+      SELECT requirements.*, adventures.name AS adventure_name, ranks.name AS rank_name, adventures.source_url AS source_url, COUNT(DISTINCT activities.id) AS activity_count
+      FROM requirements
+      JOIN adventures ON adventures.id = requirements.adventure_id
+      JOIN ranks ON ranks.id = adventures.rank_id
+      LEFT JOIN activities ON activities.requirement_id = requirements.id
+      WHERE requirements.id = ?
+      GROUP BY requirements.id
+    `)
+    .get(id) as Record<string, unknown> | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    entityType: "requirements",
+    record: {
+      ...mapRequirement(row),
+      rankName: String(row.rank_name),
+      adventureName: String(row.adventure_name),
+      activityCount: Number(row.activity_count ?? 0),
+      sourceSnapshot: getSourceSnapshot("adventure", String(row.adventure_id))
+    }
+  };
+}
+
+function getAdminActivityDetail(id: string): AdminCurriculumDetail | null {
+  const row = db
+    .prepare(`
+      SELECT activities.*, adventures.name AS adventure_name, ranks.name AS rank_name, requirements.requirement_number AS requirement_number
+      FROM activities
+      JOIN adventures ON adventures.id = activities.adventure_id
+      JOIN ranks ON ranks.id = adventures.rank_id
+      LEFT JOIN requirements ON requirements.id = activities.requirement_id
+      WHERE activities.id = ?
+    `)
+    .get(id) as Record<string, unknown> | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    entityType: "activities",
+    record: {
+      ...mapActivity(row),
+      rankName: String(row.rank_name),
+      adventureName: String(row.adventure_name),
+      requirementNumber: row.requirement_number === null || row.requirement_number === undefined ? null : Number(row.requirement_number),
+      sourceSnapshot: getSourceSnapshot("activity", id)
+    }
+  };
+}
+
+export function getAdminCurriculumDetail(entityType: CurriculumEntityType, id: string): AdminCurriculumDetail | null {
+  switch (entityType) {
+    case "ranks":
+      return getAdminRankDetail(id);
+    case "adventures":
+      return getAdminAdventureDetail(id);
+    case "requirements":
+      return getAdminRequirementDetail(id);
+    case "activities":
+      return getAdminActivityDetail(id);
+    default:
+      return null;
+  }
+}
+
+export function saveAdminCurriculumRecord(input: AdminCurriculumWrite): AdminCurriculumDetail | null {
+  switch (input.entityType) {
+    case "ranks": {
+      upsertRank(input.record);
+      ensureDefaultDenProfileForRank(input.record);
+      return getAdminRankDetail(input.record.id);
+    }
+    case "adventures": {
+      const rank = getRank(input.record.rankId);
+      if (!rank) {
+        throw new Error("Rank not found for adventure");
+      }
+      upsertAdventure(input.record);
+      return getAdminAdventureDetail(input.record.id);
+    }
+    case "requirements": {
+      const adventure = getAdventureBundle(input.record.adventureId);
+      if (!adventure) {
+        throw new Error("Adventure not found for requirement");
+      }
+      upsertRequirement(input.record);
+      return getAdminRequirementDetail(input.record.id);
+    }
+    case "activities": {
+      const adventure = getAdventureBundle(input.record.adventureId);
+      if (!adventure) {
+        throw new Error("Adventure not found for activity");
+      }
+      if (input.record.requirementId) {
+        const requirement = db
+          .prepare("SELECT * FROM requirements WHERE id = ? AND adventure_id = ?")
+          .get(input.record.requirementId, input.record.adventureId) as Record<string, unknown> | undefined;
+        if (!requirement) {
+          throw new Error("Requirement not found for activity");
+        }
+      }
+      upsertActivity(input.record);
+      return getAdminActivityDetail(input.record.id);
+    }
+    default:
+      return null;
+  }
 }
 
 const trailBucketMeta: Array<{
@@ -634,7 +1172,7 @@ function getSavedPlanAdventureIds(savedPlan: SavedMeetingPlan): string[] {
   if (Array.isArray(savedPlan.payload.adventures) && savedPlan.payload.adventures.length > 0) {
     return savedPlan.payload.adventures.map((adventure) => adventure.id);
   }
-  return savedPlan.adventureId ? [savedPlan.adventureId] : [];
+  return Array.isArray(savedPlan.payload.request.adventureIds) ? savedPlan.payload.request.adventureIds : [];
 }
 
 function buildTrailProgress(denId: string): AdventureTrailProgress {
@@ -715,46 +1253,43 @@ export function resetContentForTests(): void {
   `);
 }
 
+export function resetCurriculumForRebuild(): void {
+  db.exec(`
+    DELETE FROM source_snapshots;
+    DELETE FROM meeting_recaps;
+    DELETE FROM meeting_plans;
+    DELETE FROM activities;
+    DELETE FROM requirements;
+    DELETE FROM adventures;
+    DELETE FROM den_profiles;
+    DELETE FROM ranks;
+  `);
+}
+
 export function saveMeetingPlan(input: SaveMeetingPlanRequest): SavedMeetingPlan {
-  const primaryAdventureId = input.payload.adventures[0]?.id ?? input.payload.request.adventureIds[0] ?? "";
   const savedPlan: SavedMeetingPlan = {
     id: input.payload.id,
     denId: input.denId,
-    rankId: input.payload.rank.id,
-    adventureId: primaryAdventureId,
     title: input.title,
     plannedDate: input.plannedDate,
-    monthKey: input.monthKey,
-    monthLabel: input.monthLabel,
-    theme: input.theme,
     payload: input.payload,
     recap: getMeetingRecap(input.payload.id),
     createdAt: new Date().toISOString()
   };
   db.prepare(`
     INSERT INTO meeting_plans (
-      id, den_id, rank_id, adventure_id, title, planned_date, month_key, month_label, theme, payload_json, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, den_id, title, planned_date, payload_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       den_id = excluded.den_id,
-      rank_id = excluded.rank_id,
-      adventure_id = excluded.adventure_id,
       title = excluded.title,
       planned_date = excluded.planned_date,
-      month_key = excluded.month_key,
-      month_label = excluded.month_label,
-      theme = excluded.theme,
       payload_json = excluded.payload_json
   `).run(
     savedPlan.id,
     savedPlan.denId,
-    savedPlan.rankId,
-    savedPlan.adventureId,
     savedPlan.title,
     savedPlan.plannedDate,
-    savedPlan.monthKey,
-    savedPlan.monthLabel,
-    savedPlan.theme,
     JSON.stringify(savedPlan.payload),
     savedPlan.createdAt
   );
@@ -808,65 +1343,11 @@ export function listSavedPlansForDen(denId: string): SavedMeetingPlan[] {
       return {
         id,
         denId: String(record.den_id),
-        rankId: String(record.rank_id),
-        adventureId: String(record.adventure_id),
         title: String(record.title),
         plannedDate: record.planned_date ? String(record.planned_date) : null,
-        monthKey: String(record.month_key),
-        monthLabel: String(record.month_label),
-        theme: String(record.theme),
         payload: JSON.parse(String(record.payload_json)) as MeetingPlan,
         recap: getMeetingRecap(id),
         createdAt: String(record.created_at)
       };
     });
-}
-
-export function buildYearPlan(denId: string): YearPlan | null {
-  const den = getDenProfile(denId);
-  if (!den) {
-    return null;
-  }
-  const grouped = new Map<string, YearPlanMonth>();
-  for (const savedPlan of listSavedPlansForDen(denId)) {
-    const key = savedPlan.monthKey;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.items.push(savedPlan);
-    } else {
-      grouped.set(key, {
-        monthKey: key,
-        monthLabel: savedPlan.monthLabel,
-        theme: savedPlan.theme,
-        items: [savedPlan]
-      });
-    }
-  }
-  return {
-    den,
-    trailProgress: buildTrailProgress(denId),
-    months: Array.from(grouped.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-  };
-}
-
-export function duplicateMeetingPlan(savedPlanId: string, nextMonthKey: string, nextMonthLabel: string, nextTheme: string): SavedMeetingPlan | null {
-  const original = db.prepare("SELECT * FROM meeting_plans WHERE id = ?").get(savedPlanId) as Record<string, unknown> | undefined;
-  if (!original) {
-    return null;
-  }
-  const payload = JSON.parse(String(original.payload_json)) as MeetingPlan;
-  const duplicatedPayload: MeetingPlan = {
-    ...payload,
-    id: `${payload.id}-copy-${Date.now()}`,
-    generatedAt: new Date().toISOString()
-  };
-  return saveMeetingPlan({
-    denId: String(original.den_id),
-    title: `${String(original.title)} Copy`,
-    plannedDate: null,
-    monthKey: nextMonthKey,
-    monthLabel: nextMonthLabel,
-    theme: nextTheme,
-    payload: duplicatedPayload
-  });
 }
