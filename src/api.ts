@@ -1,17 +1,22 @@
 import type {
+  AdminCurriculumDetail,
+  AdminCurriculumListItem,
+  AdminCurriculumWrite,
   ActivitySwapRequest,
   Adventure,
   AdventureTrailData,
   ContentStatus,
+  CurriculumEntityType,
   DenProfile,
+  OpeningGenerationRequest,
+  OpeningGenerationResponse,
   MeetingPlan,
   Requirement,
   MeetingRecap,
   PackWorkspace,
   SaveMeetingPlanRequest,
   SaveRecapRequest,
-  SavedMeetingPlan,
-  YearPlan
+  SavedMeetingPlan
 } from "../shared/types.js";
 
 async function readJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -36,6 +41,18 @@ export const api = {
   },
   listDens(): Promise<DenProfile[]> {
     return readJson("/api/dens");
+  },
+  listAdminCurriculum(): Promise<{ items: AdminCurriculumListItem[] }> {
+    return readJson("/api/admin/curriculum");
+  },
+  getAdminCurriculumDetail(entityType: CurriculumEntityType, id: string): Promise<AdminCurriculumDetail> {
+    return readJson(`/api/admin/curriculum/${entityType}/${id}`);
+  },
+  saveAdminCurriculumRecord(request: AdminCurriculumWrite): Promise<AdminCurriculumDetail> {
+    return readJson(`/api/admin/curriculum/${request.entityType}`, {
+      method: "POST",
+      body: JSON.stringify(request)
+    });
   },
   listAdventures(denId: string): Promise<Adventure[]> {
     return readJson(`/api/dens/${denId}/adventures`);
@@ -64,19 +81,16 @@ export const api = {
       body: JSON.stringify(request)
     });
   },
+  generateOpening(request: OpeningGenerationRequest): Promise<OpeningGenerationResponse> {
+    return readJson("/api/plans/opening", {
+      method: "POST",
+      body: JSON.stringify(request)
+    });
+  },
   saveRecap(request: SaveRecapRequest): Promise<MeetingRecap> {
     return readJson("/api/plans/recap", {
       method: "POST",
       body: JSON.stringify(request)
     });
   },
-  duplicatePlan(savedPlanId: string, monthKey: string, monthLabel: string, theme: string): Promise<SavedMeetingPlan> {
-    return readJson(`/api/plans/${savedPlanId}/duplicate`, {
-      method: "POST",
-      body: JSON.stringify({ monthKey, monthLabel, theme })
-    });
-  },
-  getYearPlan(denId: string): Promise<YearPlan> {
-    return readJson(`/api/dens/${denId}/year-plan`);
-  }
 };
