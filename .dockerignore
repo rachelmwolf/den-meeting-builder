@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-server
+.git
+.github
+data
+coverage
+.DS_Store
+*.log
+*.sqlite
+*.sqlite3
