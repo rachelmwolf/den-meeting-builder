@@ -27,6 +27,8 @@ describe("buildMeetingPlan", () => {
 
     expect(plan.agenda[0].kind).toBe("opening");
     expect(plan.adventures).toHaveLength(2);
+    expect(plan.agenda.some((item) => item.kind === "transition")).toBe(false);
+    expect(plan.agenda.some((item) => item.kind === "reflection")).toBe(false);
     expect(plan.coverage.every((item) => item.covered)).toBe(true);
     expect(plan.materials).toContain("Basic craft supplies");
     expect(plan.agenda.find((item) => item.kind === "activity")?.alternativeActivityIds.length).toBeGreaterThan(0);
@@ -173,6 +175,40 @@ describe("buildMeetingPlan", () => {
 
     expect(plan.coverage[0]?.activityName).toBe("Balance Trail");
     expect(plan.agenda.find((item) => item.kind === "activity")?.description).toContain("Chosen because it");
+  });
+
+  test("changes the selected activity when the soft caps change", () => {
+    const looseCapsPlan = buildMeetingPlan(demoContent.denProfiles[0], demoContent.rank, [bundles[0]], {
+      denId: demoContent.denProfiles[0].id,
+      rankId: demoContent.rank.id,
+      adventureIds: [bundles[0].adventure.id],
+      requirementIds: [bundles[0].requirements[0].id],
+      durationMinutes: 50,
+      scoutCount: 6,
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 4,
+      maxPrepLevel: 3,
+      notes: "",
+      meetingDate: null
+    });
+    const tighterCapsPlan = buildMeetingPlan(demoContent.denProfiles[0], demoContent.rank, [bundles[0]], {
+      denId: demoContent.denProfiles[0].id,
+      rankId: demoContent.rank.id,
+      adventureIds: [bundles[0].adventure.id],
+      requirementIds: [bundles[0].requirements[0].id],
+      durationMinutes: 50,
+      scoutCount: 6,
+      meetingSpace: "indoor",
+      maxEnergyLevel: 3,
+      maxSupplyLevel: 3,
+      maxPrepLevel: 3,
+      notes: "",
+      meetingDate: null
+    });
+
+    expect(looseCapsPlan.coverage[0]?.activityName).toBe("Den Doodle Lion");
+    expect(tighterCapsPlan.coverage[0]?.activityName).toBe("Den Flag Lion");
   });
 
   test("flags over-budget plans when the selected scope exceeds the meeting length", () => {
