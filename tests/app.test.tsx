@@ -3,15 +3,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { App } from "../src/App.js";
 import { demoContent } from "../shared/demo.js";
+import { buildOpeningPromptEnvelope } from "../shared/openingPrompt.js";
 import type {
   AdventureTrailData,
   MeetingPlan,
-  SavedMeetingPlan,
-  YearPlan
+  SavedMeetingPlan
 } from "../shared/types.js";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
+let openingRequestBodies: unknown[] = [];
+let generatedPlan: MeetingPlan;
+let swappedPlan: MeetingPlan;
 
 function buildTrailData(): AdventureTrailData {
   return {
@@ -76,6 +79,26 @@ function buildGeneratedPlan(): MeetingPlan {
     materials: ["Basic craft supplies"],
     agenda: [
       {
+        id: "agenda-opening",
+        kind: "opening",
+        title: "Opening Gathering",
+        durationMinutes: 10,
+        description: "Gather the den and preview tonight's focus.",
+        adventureId: null,
+        adventureName: null,
+        requirementIds: [],
+        requirementNumber: null,
+        requirementText: null,
+        activityId: null,
+        primaryRequirementId: null,
+        selectedActivityId: null,
+        alternativeActivityIds: [],
+        selectionSource: null,
+        coverageStatus: null,
+        addedFromSelection: false,
+        editableNotes: "Welcome everyone and set the tone for the meeting."
+      },
+      {
         id: "agenda-1",
         kind: "activity",
         title: "Den Doodle Lion",
@@ -130,23 +153,6 @@ function buildGeneratedPlan(): MeetingPlan {
   };
 }
 
-function buildYearPlan(savedPlans: SavedMeetingPlan[] = []): YearPlan {
-  return {
-    den: demoContent.denProfiles[0],
-    trailProgress: buildTrailData().progress,
-    months: savedPlans.length
-      ? [
-          {
-            monthKey: "2026-09",
-            monthLabel: "September 2026",
-            theme: "Kickoff and den culture",
-            items: savedPlans
-          }
-        ]
-      : []
-  };
-}
-
 describe("App", () => {
   afterEach(() => {
     cleanup();
@@ -154,13 +160,14 @@ describe("App", () => {
 
   beforeEach(() => {
     fetchMock.mockReset();
+    openingRequestBodies = [];
 
-    const generatedPlan = buildGeneratedPlan();
-    const swappedPlan: MeetingPlan = {
+    generatedPlan = buildGeneratedPlan();
+    swappedPlan = {
       ...generatedPlan,
       id: "plan-1b",
       agenda: [
-        generatedPlan.agenda[0],
+        generatedPlan.agenda.find((item) => item.kind === "opening")!,
         {
           id: "agenda-2",
           kind: "activity",
@@ -188,14 +195,14 @@ describe("App", () => {
         {
           adventureId: demoContent.adventures[0].id,
           adventureName: demoContent.adventures[0].name,
-        requirementId: demoContent.requirements[0].id,
-        requirementNumber: 1,
-        requirementText: demoContent.requirements[0].text,
-        activityId: demoContent.activities[0].id,
-        activityName: demoContent.activities[0].name,
-        covered: true,
-        coverageStatus: "automatic",
-        reason: "Covered with Den Doodle Lion."
+          requirementId: demoContent.requirements[0].id,
+          requirementNumber: 1,
+          requirementText: demoContent.requirements[0].text,
+          activityId: demoContent.activities[0].id,
+          activityName: demoContent.activities[0].name,
+          covered: true,
+          coverageStatus: "automatic",
+          reason: "Covered with Den Doodle Lion."
         },
         {
           adventureId: demoContent.adventures[1].id,
@@ -268,11 +275,21 @@ describe("App", () => {
           )
         );
       }
-      if (url.includes(`/api/dens/${demoContent.denProfiles[0].id}/year-plan`)) {
-        return Promise.resolve(new Response(JSON.stringify(buildYearPlan())));
-      }
       if (url.endsWith("/api/plans/generate")) {
         return Promise.resolve(new Response(JSON.stringify(generatedPlan)));
+      }
+      if (url.endsWith("/api/plans/opening")) {
+        if (_init?.body) {
+          openingRequestBodies.push(JSON.parse(String(_init.body)));
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              openingText:
+                "Welcome everyone.\nTonight we’ll practice teamwork,\nfocus on our selected adventures,\nand have fun while we learn."
+            })
+          )
+        );
       }
       if (url.endsWith("/api/plans/swap")) {
         return Promise.resolve(new Response(JSON.stringify(swappedPlan)));
@@ -283,13 +300,8 @@ describe("App", () => {
             JSON.stringify({
               id: generatedPlan.id,
               denId: generatedPlan.denId,
-              rankId: generatedPlan.rank.id,
-              adventureId: generatedPlan.adventures[0].id,
               title: `${generatedPlan.denName} - ${generatedPlan.adventures.map((adventure) => adventure.name).join(" + ")}`,
               plannedDate: generatedPlan.request.meetingDate,
-              monthKey: "2026-09",
-              monthLabel: "September 2026",
-              theme: "Kickoff and den culture",
               payload: generatedPlan,
               recap: null,
               createdAt: new Date().toISOString()
@@ -317,13 +329,8 @@ describe("App", () => {
             JSON.stringify({
               id: "saved-copy",
               denId: generatedPlan.denId,
-              rankId: generatedPlan.rank.id,
-              adventureId: generatedPlan.adventures[0].id,
               title: `${generatedPlan.denName} - ${generatedPlan.adventures.map((adventure) => adventure.name).join(" + ")}`,
               plannedDate: generatedPlan.request.meetingDate,
-              monthKey: "2026-09",
-              monthLabel: "September 2026",
-              theme: "Kickoff and den culture",
               payload: generatedPlan,
               recap: null,
               createdAt: new Date().toISOString()
@@ -340,17 +347,19 @@ describe("App", () => {
 
     expect(await screen.findByText("Den Leader Planning Workspace")).toBeInTheDocument();
     expect(await screen.findByText("Step 1 · Den and Meeting Basics")).toBeInTheDocument();
-    expect(await screen.findByText("Curriculum Status")).toBeInTheDocument();
-    expect(await screen.findByText("Adventure Trail Progress")).toBeInTheDocument();
-    expect(await screen.findByDisplayValue("50")).toBeInTheDocument();
+    expect(screen.queryByText("Curriculum Status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Adventure Trail Progress")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Rank")).toHaveValue(demoContent.rank.id);
     expect(await screen.findByLabelText("Meeting Space")).toHaveValue("indoor");
     expect((await screen.findAllByText(/Maximum allowed: 3\/5/i)).length).toBeGreaterThan(0);
   });
 
   test("walks through the wizard, reviews a packet first, and then swaps an activity", async () => {
-    render(<App />);
+    const { container } = render(<App />);
 
-    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    const continueButton = await screen.findByRole("button", { name: "Continue to Adventure Trail" });
+    await waitFor(() => expect(continueButton).not.toBeDisabled());
+    fireEvent.click(continueButton);
     fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
     fireEvent.click(await screen.findByLabelText(/Fun on the Run/i));
     fireEvent.click(await screen.findByText("Refine Requirements"));
@@ -358,52 +367,108 @@ describe("App", () => {
 
     expect(await screen.findByText("Step 4 · Leader Packet")).toBeInTheDocument();
     expect((await screen.findAllByText(/Bobcat Lion, Fun on the Run/i)).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Customize this plan")).toBeInTheDocument();
-    expect(screen.queryByText("Preview and Swap Activity")).not.toBeInTheDocument();
-    expect(await screen.findByText(/Planned minutes: 50 \/ 50/i)).toBeInTheDocument();
+    expect(screen.queryByText("Customize this plan")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Planned minutes:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Time budget/i)).not.toBeInTheDocument();
+    expect((await screen.findAllByText("Opening Gathering")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText("Generate opening"));
+    expect(await screen.findByDisplayValue(/practice teamwork/i)).toBeInTheDocument();
+    expect(openingRequestBodies).toHaveLength(1);
+    expect(openingRequestBodies[0]).toEqual(buildOpeningPromptEnvelope(generatedPlan));
+    expect(await screen.findByText("+ Add another activity")).toBeInTheDocument();
+    expect((await screen.findAllByText("Summary")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(demoContent.activities[0].summary)).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByText("Customize this plan"));
-
-    fireEvent.click(await screen.findByText("Preview and Swap Activity"));
+    fireEvent.click(screen.getByText("+ Add another activity"));
     expect(await screen.findByText("Activity Options")).toBeInTheDocument();
-    expect((await screen.findAllByText("Matches this requirement")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Other official activities")).toBeInTheDocument();
+    expect((await screen.findAllByText("Recommended for this requirement")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("More official activities")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Den Flag Lion"));
+    expect(screen.queryByText(/Using it will add that requirement as its own agenda block/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Use This Activity"));
+    expect((await screen.findAllByText("Den Doodle Lion")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Den Flag Lion")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText("+ Add another activity"));
+    expect(await screen.findByText("Activity Options")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Animal Warmups"));
     expect(
       await screen.findByText(/Using it will add that requirement as its own agenda block/i)
     ).toBeInTheDocument();
+    expect((await screen.findAllByText("Summary")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Supply Note")).toBeInTheDocument();
+    expect(await screen.findByText("Directions")).toBeInTheDocument();
     expect((await screen.findAllByText(/Energy 3\/5/i)).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("Use This Activity"));
 
-    expect(await screen.findByText("Leader-added requirement")).toBeInTheDocument();
     expect((await screen.findAllByText("Animal Warmups")).length).toBeGreaterThan(0);
-    expect(fetchMock).toHaveBeenCalledWith("/api/plans/swap", expect.objectContaining({ method: "POST" }));
+    expect(container.querySelectorAll(".print-stage-before .print-stage-card").length).toBe(6);
+    expect(container.querySelectorAll(".print-stage-during .print-stage-card").length).toBe(3);
   });
 
-  test("moves year-plan metadata to step 4 and removes recap from the packet view", async () => {
+  test("warns before removing the last activity for a requirement from the packet card", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    const continueButton = await screen.findByRole("button", { name: "Continue to Adventure Trail" });
+    await waitFor(() => expect(continueButton).not.toBeDisabled());
+    fireEvent.click(continueButton);
     fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
     fireEvent.click(await screen.findByText("Refine Requirements"));
     fireEvent.click(await screen.findByText("Generate Leader Packet"));
 
+    const addCard = await screen.findByText("+ Add another activity");
+    expect(addCard).toBeInTheDocument();
+    const removeButtons = await screen.findAllByRole("button", { name: "Remove activity" });
+    fireEvent.click(removeButtons[0]);
+
+    expect(await screen.findByText(/Removing this activity leaves Requirement/i)).toBeInTheDocument();
+    expect(await screen.findByText("Keep activity")).toBeInTheDocument();
+    expect(await screen.findByText("Remove anyway")).toBeInTheDocument();
+  });
+
+  test("prints the packet as three staged pages with multiline opening text", async () => {
+    const { container } = render(<App />);
+
+    const continueButton = await screen.findByRole("button", { name: "Continue to Adventure Trail" });
+    await waitFor(() => expect(continueButton).not.toBeDisabled());
+    fireEvent.click(continueButton);
+    fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
+    fireEvent.click(await screen.findByText("Refine Requirements"));
+    fireEvent.click(await screen.findByText("Generate Leader Packet"));
+
+    const printToggle = await screen.findByRole("button", { name: "Print Packet" });
+    fireEvent.click(printToggle);
+    expect(screen.queryByText("Print settings")).not.toBeInTheDocument();
+    expect(container.querySelector(".print-stage-before h2")?.textContent).toBe("Before the Meeting");
+    expect(container.querySelector(".print-stage-during h2")?.textContent).toBe("During the Meeting");
+    expect(container.querySelector(".print-stage-after h2")?.textContent).toBe("After the Meeting");
     expect(screen.queryByText("Meeting Recap")).not.toBeInTheDocument();
     expect(screen.queryByText("Parent Update Template")).not.toBeInTheDocument();
-    expect((await screen.findAllByText("Save to Year Plan")).length).toBeGreaterThan(0);
-    expect(await screen.findByDisplayValue("September 2026")).toBeInTheDocument();
-    expect(await screen.findByDisplayValue("Kickoff and den culture")).toBeInTheDocument();
+
+    expect(container.querySelector(".print-stage-before .print-section h3")?.textContent).toBe("Materials");
+    expect(container.querySelector(".print-stage-before .print-section + .print-section h3")?.textContent).toBe("Activities");
+    expect(container.querySelectorAll(".print-stage-before .print-stage-card").length).toBe(2);
+    expect(container.querySelectorAll(".print-stage-during .print-stage-card").length).toBe(1);
+
+    fireEvent.change(screen.getByLabelText("Opening gathering script"), {
+      target: {
+        value: "Welcome everyone.\nTonight we’ll practice teamwork,\nfocus on our selected adventures,\nand have fun while we learn."
+      }
+    });
+    await waitFor(() => expect(container.querySelector(".print-opening-script")).toHaveTextContent(/practice teamwork/));
   });
 
   test("step 1 keeps only planning inputs and step 3 generates the packet directly", async () => {
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(screen.queryByText("Leader Notes")).not.toBeInTheDocument();
     expect(screen.queryByText("Year Plan Month")).not.toBeInTheDocument();
     expect(screen.queryByText("Month Key")).not.toBeInTheDocument();
     expect(screen.queryByText("Theme")).not.toBeInTheDocument();
 
-    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    const continueButton = await screen.findByRole("button", { name: "Continue to Adventure Trail" });
+    await waitFor(() => expect(continueButton).not.toBeDisabled());
+    fireEvent.click(continueButton);
     fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
     fireEvent.click(await screen.findByText("Refine Requirements"));
     fireEvent.click(await screen.findByText("Generate Leader Packet"));
@@ -412,18 +477,21 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/plans/generate", expect.objectContaining({ method: "POST" }))
     );
     expect(await screen.findByText("Step 4 · Leader Packet")).toBeInTheDocument();
-    expect((await screen.findAllByText("Materials Checklist")).length).toBeGreaterThan(0);
+    expect(container.querySelector(".print-stage-after h3")?.textContent).toBe("Clean Space Checklist");
   });
 
-  test("shows a pre-generation time warning when the selected scope is too large", async () => {
+  test("does not show visible timing warnings in the wizard", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByText("Continue to Adventure Trail"));
+    const continueButton = await screen.findByRole("button", { name: "Continue to Adventure Trail" });
+    await waitFor(() => expect(continueButton).not.toBeDisabled());
+    fireEvent.click(continueButton);
     fireEvent.click(await screen.findByLabelText(/Bobcat Lion/i));
     fireEvent.click(await screen.findByLabelText(/Fun on the Run/i));
     fireEvent.click(await screen.findByText("Refine Requirements"));
 
-    expect(await screen.findByText(/likely too large for 50 minutes/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Minimum likely time:/i)).toBeInTheDocument();
+    expect(screen.queryByText(/likely too large for/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Minimum likely time:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Planned minutes:/i)).not.toBeInTheDocument();
   });
 });
