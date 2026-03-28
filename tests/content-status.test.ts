@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ensureDefaultDenProfileForRank, getContentStatus, initDb, listDenProfiles, resetContentForTests, saveSourceSnapshot, upsertRank, upsertWorkspace } from "../server/db.js";
 import { demoContent } from "../shared/demo.js";
 import type { Rank } from "../shared/types.js";
+import { newGuid } from "../shared/utils.js";
+
+const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const importedRank: Rank = {
-  id: "wolf",
+  id: newGuid(),
   name: "Wolf",
   grade: "2nd Grade",
   slug: "wolf",
@@ -50,11 +53,12 @@ describe("content status", () => {
     expect(status.datasetMode).toBe("mixed");
     expect(status.importedRanks).toEqual([
       {
-        rankId: "wolf",
+        rankId: importedRank.id,
         rankName: "Wolf",
         refreshedAt: "2026-03-22T10:00:00.000Z"
       }
     ]);
+    expect(status.importedRanks[0]?.rankId).toMatch(guidPattern);
     expect(status.activityFieldCoverage).toMatchObject({
       totalActivities: 0,
       meetingSpaceCount: 0,
@@ -64,8 +68,8 @@ describe("content status", () => {
       materialsCount: 0
     });
     expect(dens[0]).toMatchObject({
-      rankId: "wolf",
-      name: "Wolf Imported Den"
+      rankId: importedRank.id,
+      name: "Wolf Den"
     });
   });
 });
