@@ -1,6 +1,14 @@
 import * as cheerio from "cheerio";
-import type { Activity, ActivityMeetingSpace, Adventure, AdventureBundle, Rank, Requirement } from "../shared/types.js";
-import { makeId, slugify } from "../shared/utils.js";
+import type {
+  Activity,
+  ActivityDirections,
+  ActivityMeetingSpace,
+  Adventure,
+  AdventureBundle,
+  Rank,
+  Requirement
+} from "../shared/types.js";
+import { NO_SUPPLIES_SENTINEL, newGuid, slugify } from "../shared/utils.js";
 import { BASE_URL } from "./constants.js";
 
 interface RankLink {
@@ -8,6 +16,20 @@ interface RankLink {
   grade: string;
   sourceUrl: string;
   slug: string;
+}
+
+export interface ParsedActivitySourcePage {
+  rank: Omit<Rank, "id">;
+  adventure: Omit<Adventure, "id" | "rankId">;
+  requirementNumber: number | null;
+  activity: Activity;
+}
+
+export interface ParsedAdventureMarkdown {
+  snapshot: string;
+  safetyMoment: string;
+  alternatePath: string;
+  requirements: Array<{ number: number; text: string }>;
 }
 
 function absolutize(url: string): string {
@@ -72,7 +94,7 @@ export function parseRankPage(html: string, rank: Rank): Adventure[] {
     const kind = classTokens.includes("cs-adv-type-elective") ? "elective" : "required";
 
     adventures.push({
-      id: makeId(rank.id, text),
+      id: newGuid(),
       rankId: rank.id,
       name: text,
       slug: slugify(text),
@@ -98,7 +120,7 @@ export function parseRankPage(html: string, rank: Rank): Adventure[] {
     const category = normalizeAdventureCategory(card.find("p, span").first().text()) || "Adventure";
     const kind = /elective/i.test(card.text()) ? "elective" : "required";
     adventures.push({
-      id: makeId(rank.id, name),
+      id: newGuid(),
       rankId: rank.id,
       name,
       slug: slugify(name),
@@ -118,7 +140,7 @@ function parseDifficulty(text: string): number | null {
 
 function normalizeMeetingSpace(text: string): ActivityMeetingSpace {
   const normalized = normalizeText(text).toLowerCase();
-  if (normalized.includes("outing with travel")) {
+  if (normalized.includes("outing with travel") || normalized === "travel") {
     return "outing-with-travel";
   }
   if (normalized.includes("indoor") && normalized.includes("outdoor")) {
@@ -220,6 +242,7 @@ function extractMaterials(values: string[]): string[] {
 function shouldSkipContentText(text: string): boolean {
   return (
     /image$/i.test(text) ||
+    /^no supplies are required\.?$/i.test(text) ||
     /^(energy level of cub scouts|supply list for this activity|preparation time for this activity)\b/i.test(text) ||
     (/:\s*$/.test(text) && text.length < 40) ||
     (/^(lion|tiger|wolf|bear|webelos|arrow of light)\s+[–-]/i.test(text) &&
@@ -290,6 +313,587 @@ function extractRequirementText($: cheerio.CheerioAPI, heading: any): string {
   return "";
 }
 
+function findExactHeading($: cheerio.CheerioAPI, text: string): cheerio.Cheerio<any> {
+  return $("h1, h2, h3, h4, .elementor-heading-title, .pp-accordion-title-text")
+    .filter((_index, element) => normalizeText($(element).text()) === text)
+    .first();
+}
+
+function normalizeMarkdownText(text: string): string {
+  return normalizeText(text)
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMarkdownHeadingLine(line: string): boolean {
+  return /^#{2,6}\s/.test(line.trim());
+}
+
+function collectMarkdownSection(lines: string[], startIndex: number, stopPatterns: RegExp[] = []): string {
+  if (startIndex < 0) {
+    return "";
+  }
+
+  const collected: string[] = [];
+  for (const line of lines.slice(startIndex + 1)) {
+    const trimmed = line.trim();
+    if (isMarkdownHeadingLine(trimmed)) {
+      break;
+    }
+    if (stopPatterns.some((pattern) => pattern.test(trimmed))) {
+      break;
+    }
+    if (!trimmed) {
+      continue;
+    }
+    collected.push(normalizeMarkdownText(trimmed));
+  }
+
+  return collected.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function extractTextSequence($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): string[] {
+  return root
+    .find("h1, h2, h3, h4, p, span, li")
+    .map((_index, element) => normalizeText($(element).text()))
+    .get()
+    .filter(Boolean);
+}
+
+function collectFollowingWidgetTexts(
+  $: cheerio.CheerioAPI,
+  heading: cheerio.Cheerio<any>,
+  selector: string,
+  stopHeadings: string[] = []
+): string[] {
+  const headingWidget = heading.closest(".elementor-widget");
+  if (!headingWidget.length) {
+    return [];
+  }
+
+  const stopSet = new Set(stopHeadings.map((value) => normalizeText(value).toLowerCase()));
+  const results: string[] = [];
+  const scope = heading.closest(".elementor-container, .elementor-column, main, article, body");
+  const widgets = scope.find(".elementor-widget").toArray();
+  const startIndex = widgets.findIndex((element) => element === headingWidget.get(0));
+  if (startIndex < 0) {
+    return [];
+  }
+
+  for (const element of widgets.slice(startIndex + 1)) {
+    const widget = $(element);
+    const widgetHeadings = widget
+      .find("h1, h2, h3, h4")
+      .map((_i, node) => normalizeText($(node).text()).toLowerCase())
+      .get();
+    if (widgetHeadings.some((text) => stopSet.has(text))) {
+      break;
+    }
+
+    widget.find(selector).each((_subIndex, subElement) => {
+      const text = normalizeText($(subElement).text());
+      if (!text) {
+        return;
+      }
+      results.push(text);
+    });
+  }
+
+  return results;
+}
+
+function collectFollowingDocumentTexts(
+  $: cheerio.CheerioAPI,
+  heading: cheerio.Cheerio<any>,
+  selector: string,
+  stopHeadings: string[] = []
+): string[] {
+  const headingNode = heading.get(0);
+  if (!headingNode) {
+    return [];
+  }
+
+  const stopSet = new Set(stopHeadings.map((value) => normalizeText(value).toLowerCase()));
+  const scope = heading.closest(".elementor-container, .elementor-column, main, article, body");
+  const descendants = scope.find("*").toArray();
+  const results: string[] = [];
+  let afterHeading = false;
+
+  for (const element of descendants) {
+    if (!afterHeading) {
+      if (element === headingNode) {
+        afterHeading = true;
+      }
+      continue;
+    }
+
+    const node = $(element);
+    const text = normalizeText(node.text());
+    if (text && /^h[1-4]$/i.test(element.tagName) && stopSet.has(text.toLowerCase())) {
+      break;
+    }
+    if (!node.is(selector)) {
+      continue;
+    }
+    if (!text) {
+      continue;
+    }
+    results.push(text);
+  }
+
+  return results;
+}
+
+function collectFollowingTexts(
+  $: cheerio.CheerioAPI,
+  heading: cheerio.Cheerio<any>,
+  selector: string,
+  stopHeadings: string[] = []
+): string[] {
+  const results = [
+    ...collectFollowingWidgetTexts($, heading, selector, stopHeadings),
+    ...collectFollowingDocumentTexts($, heading, selector, stopHeadings)
+  ];
+  const seen = new Set<string>();
+  return results.filter((value) => {
+    if (seen.has(value)) {
+      return false;
+    }
+    seen.add(value);
+    return true;
+  });
+}
+
+function extractSnapshotSummary($: cheerio.CheerioAPI): string {
+  const heading = findExactHeading($, "Snapshot of Activity");
+  if (!heading.length) {
+    return "";
+  }
+  return (
+    collectFollowingTexts($, heading, "p", ["Adventure Activity Key", "Supply List", "Directions", "Additional Resources", "Other Activities Options"])[0] ??
+    ""
+  );
+}
+
+function findNextTextIndex(text: string, startIndex: number, labels: string[]): number {
+  let nextIndex = -1;
+  for (const label of labels) {
+    const labelIndex = text.indexOf(label, startIndex);
+    if (labelIndex === -1) {
+      continue;
+    }
+    if (nextIndex === -1 || labelIndex < nextIndex) {
+      nextIndex = labelIndex;
+    }
+  }
+  return nextIndex;
+}
+
+function parseActivityKeyValuesFromText(text: string): {
+  meetingSpace: ActivityMeetingSpace | null;
+  energyLevel: number | null;
+  supplyLevel: number | null;
+  prepLevel: number | null;
+} {
+  const normalized = normalizeText(text);
+  const meetingSpace = normalizeMeetingSpace(normalized);
+  const numbers = Array.from(normalized.matchAll(/\b([1-5])\b/g)).map((entry) => Number(entry[1]));
+  return {
+    meetingSpace: meetingSpace === "unknown" ? null : meetingSpace,
+    energyLevel: numbers[0] ?? null,
+    supplyLevel: numbers[1] ?? null,
+    prepLevel: numbers[2] ?? null
+  };
+}
+
+function extractActivityKey($: cheerio.CheerioAPI): {
+  meetingSpace: ActivityMeetingSpace | null;
+  energyLevel: number | null;
+  supplyLevel: number | null;
+  prepLevel: number | null;
+} {
+  const heading = findExactHeading($, "Snapshot of Activity");
+  if (!heading.length) {
+    return {
+      meetingSpace: null,
+      energyLevel: null,
+      supplyLevel: null,
+      prepLevel: null
+    };
+  }
+
+  const values = collectFollowingWidgetTexts($, heading, ".elementor-icon-box-title span", [
+    "Supply List",
+    "Directions",
+    "Additional Resources",
+    "Other Activities Options"
+  ]);
+  if (values.length >= 4) {
+    const [meetingSpaceText = "", energyText = "", supplyText = "", prepText = ""] = values;
+    const meetingSpace = normalizeMeetingSpace(meetingSpaceText);
+    return {
+      meetingSpace: meetingSpace === "unknown" ? null : meetingSpace,
+      energyLevel: parseDifficulty(energyText),
+      supplyLevel: parseDifficulty(supplyText),
+      prepLevel: parseDifficulty(prepText)
+    };
+  }
+
+  const summary = extractSnapshotSummary($);
+  const rawText = $("#main, main, article, body").first().text().replace(/\s+/g, " ").trim();
+  const summaryIndex = summary && rawText.includes(summary) ? rawText.indexOf(summary) + summary.length : rawText.indexOf("Snapshot of Activity");
+  const sectionStart = summaryIndex >= 0 ? summaryIndex : 0;
+  const sectionEnd = findNextTextIndex(rawText, sectionStart, [
+    "Supply List",
+    "Directions",
+    "Additional Resources",
+    "Other Activities Options"
+  ]);
+  const section = rawText.slice(sectionStart, sectionEnd >= 0 ? sectionEnd : undefined);
+  return parseActivityKeyValuesFromText(section);
+}
+
+function looksLikeSupplyNote(text: string): boolean {
+  return /(^supply list note:)|\b(can be made|example of a den doodle|stands on its own|there are several different designs)\b/i.test(text);
+}
+
+function isSupplySectionBoundary(text: string): boolean {
+  return /^(Before the meeting|Before camping|During the meeting|During the meeting or at home|After the meeting|At Home Option|Den Meeting Option|Go Camping!):?$/i.test(
+    text.replace(/\s+/g, " ").trim()
+  );
+}
+
+function extractSupplyList($: cheerio.CheerioAPI): {
+  supplyNote: string | null;
+  materials: string[];
+  noSupplies: boolean;
+} {
+  const heading = findExactHeading($, "Supply List");
+  if (!heading.length) {
+    return {
+      supplyNote: null,
+      materials: [],
+      noSupplies: false
+    };
+  }
+
+  const accordionTexts = heading
+    .closest(".pp-accordion-item")
+    .find(".pp-accordion-tab-content")
+    .first()
+    .find("p, li")
+    .map((_index, element) => normalizeText($(element).text()))
+    .get()
+    .filter(Boolean);
+  const texts =
+    accordionTexts.length > 0
+      ? accordionTexts
+      : collectFollowingTexts($, heading, "p, li", ["Directions", "Additional Resources", "Other Activities Options"]);
+  const materials: string[] = [];
+  let supplyNote: string | null = null;
+  const noSuppliesPattern = /^no supplies are required\.?$/i;
+
+  for (const [index, text] of texts.entries()) {
+    let value = text.replace(/^Supply List:\s*/i, "").trim();
+    if (!value) {
+      continue;
+    }
+    if (isSupplySectionBoundary(value)) {
+      break;
+    }
+    if (noSuppliesPattern.test(text) || noSuppliesPattern.test(value)) {
+      return {
+        supplyNote,
+        materials: [],
+        noSupplies: true
+      };
+    }
+    if (index === 0 && /^Supply List Note:\s*/i.test(value)) {
+      supplyNote = value.replace(/^Supply List Note:\s*/i, "").trim();
+      continue;
+    }
+    if (index === 0 && !/^Supply List:/i.test(text) && looksLikeSupplyNote(value) && texts.length > 1) {
+      supplyNote = value;
+      continue;
+    }
+    if (!supplyNote && /^Supply List Note:\s*/i.test(text)) {
+      supplyNote = text.replace(/^Supply List Note:\s*/i, "").trim();
+      continue;
+    }
+    materials.push(value);
+  }
+
+  return {
+    supplyNote,
+    materials,
+    noSupplies: false
+  };
+}
+
+function parseDirectionStep($: cheerio.CheerioAPI, li: cheerio.Cheerio<any>): { text: string; bullets: string[] } {
+  const clone = $(li).clone();
+  clone.children("ul, ol").remove();
+  const text = normalizeText(clone.text());
+  const bullets = $(li)
+    .children("ul, ol")
+    .first()
+    .children("li")
+    .map((_index, item) => normalizeText($(item).text()))
+    .get()
+    .filter(Boolean);
+  return {
+    text,
+    bullets
+  };
+}
+
+function extractDirections($: cheerio.CheerioAPI): ActivityDirections | null {
+  const container = $(".pp-accordion-tab-content")
+    .filter((_index, element) => /(Before the meeting|Before camping|At Home Option|Den Meeting Option|Go Camping!)/i.test(normalizeText($(element).text())))
+    .first();
+  if (!container.length) {
+    return null;
+  }
+
+  const directions: ActivityDirections = {
+    atHomeOption: null,
+    before: null,
+    during: null,
+    after: null
+  };
+
+  let currentSection: keyof ActivityDirections | null = null;
+  let currentGroup: "atHomeOption" | "denMeeting" | null = null;
+  container.children().each((_index, element) => {
+    const tagName = element.tagName.toLowerCase();
+    const text = normalizeText($(element).text());
+    if (!text) {
+      return;
+    }
+
+    if (tagName === "p") {
+      if (/^At Home Option:?$/i.test(text)) {
+        currentGroup = "atHomeOption";
+        currentSection = null;
+        directions.atHomeOption = {
+          heading: "At Home Option",
+          steps: []
+        };
+        return;
+      }
+      if (/^Den Meeting Option:?$/i.test(text)) {
+        currentGroup = "denMeeting";
+        currentSection = null;
+        return;
+      }
+      const match = text.match(/^(Before the meeting|Before camping|During the meeting|During the meeting or at home|Go Camping!|After the meeting):?$/i);
+      if (match) {
+        currentGroup = "denMeeting";
+        const key = match[1].toLowerCase().startsWith("before")
+          ? "before"
+          : match[1].toLowerCase().startsWith("during") || /^go camping!$/i.test(match[1])
+            ? "during"
+            : "after";
+        currentSection = key;
+        directions[currentSection] = {
+          heading: match[1],
+          steps: []
+        };
+      }
+      return;
+    }
+
+    if (tagName === "ol" && currentGroup === "atHomeOption" && directions.atHomeOption) {
+      const steps = $(element)
+        .children("li")
+        .map((_stepIndex, li) => parseDirectionStep($, $(li)))
+        .get();
+      directions.atHomeOption.steps.push(...steps);
+      return;
+    }
+
+    if (tagName === "ol" && currentGroup === "denMeeting" && currentSection) {
+      const steps = $(element)
+        .children("li")
+        .map((_stepIndex, li) => parseDirectionStep($, $(li)))
+        .get();
+      if (directions[currentSection]) {
+        directions[currentSection]!.steps.push(...steps);
+      }
+    }
+  });
+
+  return directions.atHomeOption || directions.before || directions.during || directions.after ? directions : null;
+}
+
+function extractHasAdditionalResources($: cheerio.CheerioAPI): boolean {
+  return findExactHeading($, "Additional Resources").length > 0;
+}
+
+function extractActivitySourceMetadata($: cheerio.CheerioAPI): {
+  rankName: string;
+  rankGrade: string;
+  rankSourceUrl: string;
+  adventureName: string;
+  adventureSourceUrl: string;
+  adventureKind: Adventure["kind"];
+  adventureCategory: string;
+  requirementNumber: number | null;
+  title: string;
+} {
+  const root = $("#main, main, article, body").first();
+  const textSequence = extractTextSequence($, root);
+  const snapshotIndex = textSequence.findIndex((text) => text === "Snapshot of Activity");
+  const headerTexts = snapshotIndex >= 0 ? textSequence.slice(0, snapshotIndex) : textSequence.slice(0, 24);
+
+  const rankLinks = $("a[href*='/programs/cub-scouts/adventures/']")
+    .map((_index, element) => $(element).attr("href") ?? "")
+    .get()
+    .filter(Boolean);
+  const rankSourceUrl = rankLinks.at(-1) ?? "";
+
+  const rankText =
+    headerTexts.find((text) => /\b(Kindergarten|1st Grade|2nd Grade|3rd Grade|4th Grade|5th Grade)\b/i.test(text)) ??
+    "";
+  const rankMatch = rankText.match(/^(.*?)\s*[–-]\s*(.*)$/);
+  const rankName = normalizeText(rankMatch?.[1] ?? rankText);
+  const rankGrade = normalizeText(rankMatch?.[2] ?? "");
+
+  const adventureLinks = $("a[href*='/cub-scout-adventures/']")
+    .map((_index, element) => $(element).attr("href") ?? "")
+    .get()
+    .filter(Boolean);
+  const adventureSourceUrl = adventureLinks.at(-1) ?? "";
+
+  const afterRank = headerTexts.slice(headerTexts.indexOf(rankText) >= 0 ? headerTexts.indexOf(rankText) + 1 : 0);
+  const bodyText = normalizeText($("body").first().text());
+  const requirementText =
+    bodyText.match(/\bRequirement\s+(\d+)\b/i)?.[0] ??
+    textSequence.find((text) => /^Requirement \d+$/i.test(text)) ??
+    afterRank.find((text) => /^Requirement \d+$/i.test(text)) ??
+    "";
+  const requirementNumberMatch = requirementText.match(/^Requirement (\d+)$/i);
+  const requirementNumber = requirementNumberMatch ? Number(requirementNumberMatch[1]) : null;
+  const beforeRequirement = afterRank.slice(0, requirementText ? afterRank.indexOf(requirementText) : afterRank.length);
+  const kindText = beforeRequirement.find((text) => /^(Required|Elective)$/i.test(text)) ?? "Required";
+  const adventureName = beforeRequirement.find(
+    (text) => text !== rankText && !/^(Required|Elective)$/i.test(text) && !/^Requirement \d+$/i.test(text)
+  );
+  const adventureCategory =
+    beforeRequirement.find(
+      (text) =>
+        text !== rankText &&
+        text !== adventureName &&
+        !/^(Required|Elective)$/i.test(text) &&
+        !/^Requirement \d+$/i.test(text)
+    ) ?? "";
+  const title = normalizeText($("h1").first().text()) || headerTexts[headerTexts.length - 1] || adventureName || "";
+
+  return {
+    rankName,
+    rankGrade,
+    rankSourceUrl,
+    adventureName: adventureName ?? "",
+    adventureSourceUrl,
+    adventureKind: /elective/i.test(kindText) ? "elective" : "required",
+    adventureCategory,
+    requirementNumber,
+    title
+  };
+}
+
+export function parseActivitySourcePage(html: string, sourceUrl: string): ParsedActivitySourcePage {
+  const $ = cheerio.load(html);
+  $("script, style, noscript, template").remove();
+  const metadata = extractActivitySourceMetadata($);
+  const activityName = metadata.title || metadata.adventureName;
+  const summary = extractSnapshotSummary($);
+  const draftActivity: Activity = {
+    id: newGuid(),
+    adventureId: newGuid(),
+    requirementId: null,
+    name: activityName,
+    slug: slugify(activityName),
+    sourceUrl,
+    summary,
+    meetingSpace: "unknown",
+    energyLevel: null,
+    supplyLevel: null,
+    prepLevel: null,
+    durationMinutes: null,
+    materials: [],
+    previewDetails: summary
+  };
+  const enriched = parseActivityDetailPage(html, draftActivity);
+  return {
+    rank: {
+      name: metadata.rankName,
+      grade: metadata.rankGrade,
+      slug: slugify(metadata.rankName),
+      sourceUrl: metadata.rankSourceUrl
+    },
+    adventure: {
+      name: metadata.adventureName || activityName,
+      slug: slugify(metadata.adventureName || activityName),
+      kind: metadata.adventureKind,
+      category: metadata.adventureCategory || "Adventure",
+      sourceUrl: metadata.adventureSourceUrl,
+      snapshot: ""
+    },
+    requirementNumber: metadata.requirementNumber,
+    activity: enriched
+  };
+}
+
+export function parseAdventureMarkdown(markdown: string): ParsedAdventureMarkdown {
+  const lines = markdown.split(/\r?\n/);
+  const snapshotIndex = lines.findIndex((line) => /^## Snapshot of adventure$/i.test(line.trim()));
+  const safetyMomentIndex = lines.findIndex((line) => /Safety Moment/i.test(line.trim()));
+  const completeIndex = lines.findIndex((line) => /^## Complete the following requirements$/i.test(line.trim()));
+
+  const snapshot = collectMarkdownSection(lines, snapshotIndex, [ /^### /i ]);
+  const safetyMoment = collectMarkdownSection(lines, safetyMomentIndex, [ /^## Complete the following requirements$/i ]);
+
+  let alternatePath = "";
+  if (snapshotIndex >= 0 && completeIndex >= 0) {
+    const alternateStartIndex = lines.findIndex((line, index) => {
+      if (index <= snapshotIndex || index >= completeIndex) {
+        return false;
+      }
+      const trimmed = line.trim();
+      return /^#{2,6}\s/.test(trimmed) && !/Safety Moment/i.test(trimmed);
+    });
+    if (alternateStartIndex >= 0) {
+      const heading = normalizeMarkdownText(lines[alternateStartIndex].replace(/^#{2,6}\s+/, ""));
+      const body = collectMarkdownSection(lines, alternateStartIndex, [ /^## Complete the following requirements$/i ]);
+      alternatePath = [heading, body].filter(Boolean).join(" ").trim();
+    }
+  }
+
+  const requirements: Array<{ number: number; text: string }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = lines[index].trim();
+    const match = heading.match(/^### Requirement (\d+)$/i);
+    if (!match) {
+      continue;
+    }
+    const number = Number(match[1]);
+    const text = collectMarkdownSection(lines, index, [/^### Requirement \d+$/i, /^## Requirement \d+$/i, /^## Complete the following requirements$/i]);
+    if (text) {
+      requirements.push({ number, text });
+    }
+  }
+
+  return {
+    snapshot,
+    safetyMoment,
+    alternatePath,
+    requirements
+  };
+}
+
 export function parseAdventurePage(html: string, adventure: Adventure): AdventureBundle {
   const $ = cheerio.load(html);
   const snapshot =
@@ -306,7 +910,7 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
     }
     const text = extractRequirementText($, element);
     requirements.push({
-      id: makeId(adventure.id, `requirement-${match[1]}`),
+      id: newGuid(),
       adventureId: adventure.id,
       requirementNumber: Number(match[1]),
       text
@@ -343,7 +947,7 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
     const materials = extractMaterials(metaBits);
     const requirement = currentRequirementNumber ? requirementByNumber.get(currentRequirementNumber) ?? null : null;
     activities.push({
-      id: makeId(adventure.id, name),
+      id: newGuid(),
       adventureId: adventure.id,
       requirementId: requirement?.id ?? null,
       name,
@@ -356,7 +960,6 @@ export function parseAdventurePage(html: string, adventure: Adventure): Adventur
       prepLevel: numericMeta[2] ?? null,
       durationMinutes: null,
       materials,
-      notes: summary,
       previewDetails: summary
     });
   });
@@ -372,6 +975,12 @@ export function parseActivityDetailPage(html: string, activity: Activity): Activ
   const $ = cheerio.load(html);
   $("script, style, noscript, template").remove();
 
+  const pageTitle = normalizeText($("h1").first().text()) || activity.name;
+  const snapshot = extractSnapshotSummary($);
+  const activityKey = extractActivityKey($);
+  const supplyList = extractSupplyList($);
+  const directions = extractDirections($);
+  const hasAdditionalResources = extractHasAdditionalResources($);
   const root = $("#main, main, article, body").first();
   const contentNodes = root.find("h1, h2, h3, h4, p, li").toArray();
   const previewParts: string[] = [];
@@ -410,28 +1019,41 @@ export function parseActivityDetailPage(html: string, activity: Activity): Activ
     previewParts.push(...collectPreviewText($, "#main li, main li, article li", 3));
   }
 
-  const previewDetails = previewParts.join("\n\n").trim();
-  const materials = extractMaterials(previewParts);
+  const previewDetails = previewParts.join("\n\n").trim() || snapshot;
+  const materials = supplyList.noSupplies
+    ? [NO_SUPPLIES_SENTINEL]
+    : supplyList.materials.length
+      ? supplyList.materials
+      : extractMaterials(previewParts);
   const rawText = cheerio.load(html).text().replace(/\s+/g, " ").trim();
   const inferredMeetingSpace = normalizeMeetingSpace(rawText);
+  const noSupplies = /no supplies are required\.?/i.test(rawText);
   return {
     ...activity,
-    meetingSpace: inferredMeetingSpace === "unknown" ? activity.meetingSpace : inferredMeetingSpace,
+    name: pageTitle,
+    slug: slugify(pageTitle),
+    summary: snapshot || activity.summary,
+    meetingSpace: activityKey.meetingSpace ?? (inferredMeetingSpace === "unknown" ? activity.meetingSpace : inferredMeetingSpace),
     energyLevel:
+      activityKey.energyLevel ??
       parseOfficialKeyLevelFromPage($, "Energy Level of Cub Scouts") ??
       parseOfficialKeyLevel(rawText, "Energy Level of Cub Scouts") ??
       activity.energyLevel,
     supplyLevel:
+      activityKey.supplyLevel ??
       parseOfficialKeyLevelFromPage($, "Supply List for this Activity") ??
       parseOfficialKeyLevel(rawText, "Supply List for this Activity") ??
       activity.supplyLevel,
     prepLevel:
+      activityKey.prepLevel ??
       parseOfficialKeyLevelFromPage($, "Prep Time for this Activity") ??
       parseOfficialKeyLevelFromPage($, "Preparation Time for this Activity") ??
       parseOfficialKeyLevelByLabels(rawText, ["Prep Time for this Activity", "Preparation Time for this Activity"]) ??
       activity.prepLevel,
-    materials: materials.length ? materials : activity.materials,
-    notes: previewDetails || activity.notes,
-    previewDetails: previewDetails || `${activity.summary}\n\nSee the official activity page for full instructions.`
+    materials: noSupplies ? [NO_SUPPLIES_SENTINEL] : materials.length ? materials : activity.materials,
+    previewDetails: previewDetails || `${activity.summary}\n\nSee the official activity page for full instructions.`,
+    supplyNote: supplyList.supplyNote ?? activity.supplyNote,
+    directions: directions ?? activity.directions ?? null,
+    hasAdditionalResources
   };
 }
