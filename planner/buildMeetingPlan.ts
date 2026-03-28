@@ -13,7 +13,12 @@ import type {
   SelectionSource,
   TimeBudgetSummary
 } from "../shared/types.js";
-import { chunkedDuration, labelMeetingSpace, makeId } from "../shared/utils.js";
+import {
+  chunkedDuration,
+  isNoSuppliesMaterialsList,
+  labelMeetingSpace,
+  newGuid
+} from "../shared/utils.js";
 
 function splitContentBlocks(value: string): string[] {
   return value
@@ -27,10 +32,13 @@ function looksLikeMaterialText(value: string): boolean {
 }
 
 function collectMaterialHints(activity: Activity): string[] {
+  if (isNoSuppliesMaterialsList(activity.materials)) {
+    return [];
+  }
   if (activity.materials.length > 0) {
     return activity.materials;
   }
-  const blocks = [...splitContentBlocks(activity.notes), ...splitContentBlocks(activity.previewDetails)];
+  const blocks = [...splitContentBlocks(activity.supplyNote ?? ""), ...splitContentBlocks(activity.previewDetails)];
   const hints: string[] = [];
   for (const block of blocks) {
     if (block === activity.summary) {
@@ -217,7 +225,7 @@ function buildActivityAgendaItems(
   filteredSelections.forEach((selection, index) => {
     const activity = selection.activity!;
     agendaItems.push({
-      id: makeId(selection.adventureId, selection.requirement.id, "activity"),
+      id: newGuid(),
       kind: "activity",
       title: activity.name,
       durationMinutes: activityDurations[index] ?? 10,
@@ -232,35 +240,11 @@ function buildActivityAgendaItems(
       selectedActivityId: activity.id,
       alternativeActivityIds: allActivities.filter((candidate) => candidate.id !== activity.id).map((candidate) => candidate.id),
       selectionSource: selection.selectionSource,
-      coverageStatus: selection.coverageStatus,
-      addedFromSelection: selection.selectionSource === "added",
-      editableNotes:
-        activity.notes ||
+        coverageStatus: selection.coverageStatus,
+        addedFromSelection: selection.selectionSource === "added",
+        editableNotes:
         `Use the official activity card for ${activity.name} and adjust delivery for ${request.scoutCount} scouts. ${buildSelectionReason(activity, request)}`
-    });
-
-    if (index < filteredSelections.length - 1) {
-      agendaItems.push({
-        id: makeId(selection.adventureId, activity.id, "transition"),
-        kind: "transition",
-        title: "Transition",
-        durationMinutes: 5,
-        description: "Reset the room, move supplies, and connect the last activity to the next requirement.",
-        adventureId: null,
-        adventureName: null,
-        requirementIds: [],
-        requirementNumber: null,
-        requirementText: null,
-        activityId: null,
-        primaryRequirementId: null,
-        selectedActivityId: null,
-        alternativeActivityIds: [],
-        selectionSource: null,
-        coverageStatus: null,
-        addedFromSelection: false,
-        editableNotes: "Use a quick movement break or call-and-response to keep scouts focused."
       });
-    }
   });
   return agendaItems;
 }
@@ -282,11 +266,10 @@ function describeMeetingShape(request: MeetingRequest): string {
 function buildTimeBudget(
   request: MeetingRequest,
   chosenActivities: Activity[],
-  transitionCount: number,
   includesReflection: boolean,
   agenda: MeetingAgendaItem[]
 ): TimeBudgetSummary {
-  const fixedMinutes = 20 + transitionCount * 5 + (includesReflection ? 5 : 0);
+  const fixedMinutes = 20 + (includesReflection ? 5 : 0);
   const minimumSuggestedMinutes = fixedMinutes + chosenActivities.length * 10;
   const recommendedMinutes =
     fixedMinutes + chosenActivities.reduce((total, activity) => total + (activity.durationMinutes ?? 15), 0);
@@ -305,10 +288,10 @@ function buildTimeBudget(
     );
   } else if (recommendedMinutes > request.durationMinutes) {
     warnings.push(
-      `The selected scope usually needs about ${recommendedMinutes} minutes with the official activities. This meeting can work, but it will be tight unless you trim transitions or simplify delivery.`
+      `The selected scope usually needs about ${recommendedMinutes} minutes with the official activities. This meeting can work, but it will be tight unless you simplify delivery.`
     );
   } else if (request.durationMinutes - plannedMinutes <= 5) {
-    warnings.push("This plan fits, but it leaves almost no extra buffer for late starts, transitions, or den discussion.");
+    warnings.push("This plan fits, but it leaves almost no extra buffer for late starts or den discussion.");
   }
 
   let status: TimeBudgetSummary["status"] = "fits";
@@ -344,16 +327,14 @@ function buildPlan(
   const chosenActivities = selections.map((selection) => selection.activity).filter((activity): activity is Activity => Boolean(activity));
 
   const introMinutes = 10;
-  const transitionCount = Math.max(chosenActivities.length - 1, 0);
-  const transitionMinutes = transitionCount * 5;
   const closingMinutes = 10;
-  const mainMinutes = Math.max(request.durationMinutes - introMinutes - transitionMinutes - closingMinutes, 15);
+  const mainMinutes = Math.max(request.durationMinutes - introMinutes - closingMinutes, 15);
   const activityDurations = chunkedDuration(mainMinutes, Math.max(chosenActivities.length, 1), 10);
 
   const adventureNames = selectedBundles.map((bundle) => bundle.adventure.name);
   const agenda: MeetingAgendaItem[] = [
     {
-      id: makeId(rank.id, "opening"),
+      id: newGuid(),
       kind: "opening",
       title: "Opening Gathering",
       durationMinutes: 10,
@@ -375,34 +356,8 @@ function buildPlan(
     ...buildActivityAgendaItems(selections, allActivities, request, activityDurations)
   ];
 
-  const uncovered = coverage.filter((item) => item.coverageStatus === "uncovered");
-  if (uncovered.length > 0) {
-    agenda.push({
-      id: makeId(rank.id, "reflection"),
-      kind: "reflection",
-      title: "Leader Review Checkpoint",
-      durationMinutes: 5,
-      description: "Review any uncovered requirements before marking the selected adventures complete.",
-      adventureId: null,
-      adventureName: null,
-      requirementIds: uncovered.map((item) => item.requirementId),
-      requirementNumber: null,
-      requirementText: null,
-      activityId: null,
-      primaryRequirementId: null,
-      selectedActivityId: null,
-      alternativeActivityIds: [],
-      selectionSource: null,
-      coverageStatus: null,
-      addedFromSelection: false,
-      editableNotes: uncovered
-        .map((item) => `${item.adventureName} · Requirement ${item.requirementNumber}: ${item.requirementText}`)
-        .join(" ")
-    });
-  }
-
   agenda.push({
-    id: makeId(rank.id, "closing"),
+    id: newGuid(),
     kind: "closing",
     title: "Closing Reflection",
     durationMinutes: 10,
@@ -422,7 +377,8 @@ function buildPlan(
     editableNotes: "Invite each scout to share one thing they learned or enjoyed."
   });
 
-  const timeBudget = buildTimeBudget(request, chosenActivities, transitionCount, uncovered.length > 0, agenda);
+  const uncovered = coverage.filter((item) => item.coverageStatus === "uncovered");
+  const timeBudget = buildTimeBudget(request, chosenActivities, uncovered.length > 0, agenda);
   const prepNotes = [
     `Review the official adventure pages for ${adventureNames.join(", ")} before the meeting.`,
     `Confirm space and setup for a ${labelMeetingSpace(request.meetingSpace).toLowerCase()} meeting.`,
@@ -436,7 +392,7 @@ function buildPlan(
   const materials = buildMaterials(chosenActivities);
 
   return {
-    id: makeId(rank.id, new Date().toISOString()),
+    id: newGuid(),
     denId: den.id,
     denName: den.name,
     rank,
@@ -467,6 +423,17 @@ function buildPlan(
       ].join(" ")
     },
     generatedAt: new Date().toISOString()
+  };
+}
+
+function preserveOpeningNotes(sourcePlan: MeetingPlan, nextPlan: MeetingPlan): MeetingPlan {
+  const openingNotes = sourcePlan.agenda.find((item) => item.kind === "opening")?.editableNotes;
+  if (!openingNotes) {
+    return nextPlan;
+  }
+  return {
+    ...nextPlan,
+    agenda: nextPlan.agenda.map((item) => (item.kind === "opening" ? { ...item, editableNotes: openingNotes } : item))
   };
 }
 
@@ -513,7 +480,7 @@ export function swapMeetingActivity(
   const targetRequirementId = selectedActivity.requirementId;
   if (!targetRequirementId || targetRequirementId === agendaItem.primaryRequirementId) {
     overrides.set(agendaItem.primaryRequirementId, selectedActivityId);
-    return buildPlan(den, rank, bundles, plan.request, overrides);
+    return preserveOpeningNotes(plan, buildPlan(den, rank, bundles, plan.request, overrides));
   }
 
   const existingRequirementIds = new Set(
@@ -529,8 +496,11 @@ export function swapMeetingActivity(
     ? new Set<string>()
     : new Set<string>([targetRequirementId]);
 
-  return buildPlan(den, rank, bundles, {
+  return preserveOpeningNotes(
+    plan,
+    buildPlan(den, rank, bundles, {
     ...plan.request,
     requirementIds: Array.from(nextRequirementIds)
-  }, overrides, addedRequirementIds);
+    }, overrides, addedRequirementIds)
+  );
 }
