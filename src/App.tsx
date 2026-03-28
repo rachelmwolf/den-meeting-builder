@@ -1,22 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "./api";
+import { AdminConfigPage } from "./AdminConfig";
+import { buildOpeningPromptEnvelope } from "../shared/openingPrompt.js";
 import type {
   Activity,
+  ActivityDirectionSection,
   Adventure,
   AdventureTrailData,
   ContentStatus,
   CoverageStatus,
   DenProfile,
+  CoverageItem,
   MeetingSpace,
   MeetingAgendaItem,
   MeetingPlan,
   MeetingRequest,
   PackWorkspace,
+  ParentUpdateTemplate,
   Requirement,
-  SavedMeetingPlan,
-  YearPlan
+  TimeBudgetSummary
 } from "../shared/types.js";
-import { labelMeetingSpace } from "../shared/utils.js";
+import {
+  chunkedDuration,
+  isNoSuppliesMaterialsList,
+  labelMeetingSpace,
+  newGuid
+} from "../shared/utils.js";
 
 const defaultRequest = {
   durationMinutes: 50,
@@ -27,12 +36,6 @@ const defaultRequest = {
   maxPrepLevel: 3,
   notes: "",
   meetingDate: ""
-};
-
-const defaultMonth = {
-  monthKey: "2026-09",
-  monthLabel: "September 2026",
-  theme: "Kickoff and den culture"
 };
 
 const steps = [
@@ -49,13 +52,6 @@ function coverageLabel(status: CoverageStatus | null): string | null {
   return null;
 }
 
-function describeProgress(current: number, target: number, required: boolean): string {
-  if (!required) {
-    return `${current}/${target} electives planned`;
-  }
-  return current >= target ? "Covered in year plan" : `${current}/${target} planned`;
-}
-
 function formatOfficialMetric(label: string, value: number | null): string {
   return value === null ? `${label} not listed` : `${label} ${value}/5`;
 }
@@ -64,15 +60,6 @@ function shortenRequirementText(text: string | null, maxLength = 110): string {
   if (!text) return "";
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength).trimEnd()}...`;
-}
-
-function describeActivityKey(activity: Activity): string[] {
-  const details = [labelMeetingSpace(activity.meetingSpace)];
-  details.push(formatOfficialMetric("Energy", activity.energyLevel));
-  details.push(formatOfficialMetric("Supplies", activity.supplyLevel));
-  details.push(formatOfficialMetric("Prep", activity.prepLevel));
-  if (activity.durationMinutes) details.push(`${activity.durationMinutes} min`);
-  return details;
 }
 
 function iconForMeetingSpace(space: Activity["meetingSpace"]): string {
@@ -90,6 +77,83 @@ function buildActivityKeyIndicators(activity: Activity): Array<{ icon: string; l
     { icon: "🧰", label: formatOfficialMetric("Supplies", activity.supplyLevel) },
     { icon: "⏳", label: formatOfficialMetric("Prep", activity.prepLevel) }
   ];
+}
+
+function renderDirectionSection(title: string, section: ActivityDirectionSection | null | undefined): ReactNode {
+  if (!section || !section.steps.length) {
+    return null;
+  }
+
+  return (
+    <section className="activity-detail-section">
+      <h5>{title}</h5>
+      <ol className="activity-detail-steps">
+        {section.steps.map((step, index) => (
+          <li key={`${title}-${index}`} className="activity-detail-step">
+            <div className="activity-detail-step-body">
+              <div className="activity-detail-step-head">
+                <span>{step.text}</span>
+              </div>
+              {step.bullets.length ? (
+                <ul>
+                  {step.bullets.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function renderPrintDirectionSteps(section: ActivityDirectionSection | null | undefined): ReactNode {
+  if (!section || !section.steps.length) {
+    return null;
+  }
+
+  return (
+    <ol className="print-direction-steps">
+      {section.steps.map((step, index) => (
+        <li key={`${section.heading}-${index}`}>
+          <p>{step.text}</p>
+          {step.bullets.length ? (
+            <ul>
+              {step.bullets.map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function getPrintableDirectionSections(
+  activity: Activity,
+  stage: "before" | "during"
+): Array<{ heading: string; section: ActivityDirectionSection }> {
+  const sections: Array<{ heading: string; section: ActivityDirectionSection }> = [];
+  if (stage === "before") {
+    if (activity.directions?.before) {
+      sections.push({ heading: "Before the Meeting", section: activity.directions.before });
+    }
+    return sections;
+  }
+
+  if (activity.directions?.during) {
+    sections.push({ heading: "During the Meeting", section: activity.directions.during });
+  }
+  if (activity.directions?.atHomeOption) {
+    sections.push({ heading: "At Home Option", section: activity.directions.atHomeOption });
+  }
+  if (activity.directions?.after) {
+    sections.push({ heading: "After the Meeting", section: activity.directions.after });
+  }
+  return sections;
 }
 
 function scoreActivityFit(activity: Activity, request: ActivityFitRequest): number {
@@ -119,13 +183,20 @@ function buildActivityFitSummary(activity: Activity, request: ActivityFitRequest
 }
 
 function splitActivityNotes(activity: Activity): string[] {
-  return [activity.notes, activity.previewDetails, ...(activity.materials ?? [])]
+  return [
+    activity.supplyNote ?? "",
+    activity.previewDetails,
+    ...(isNoSuppliesMaterialsList(activity.materials) ? [] : activity.materials ?? [])
+  ]
     .flatMap((value) => value.split(/\n{2,}/))
     .map((part) => part.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
 
 function getActivityMaterials(activity: Activity): string[] {
+  if (isNoSuppliesMaterialsList(activity.materials)) {
+    return [];
+  }
   if (Array.isArray(activity.materials) && activity.materials.length > 0) {
     return activity.materials;
   }
@@ -138,25 +209,8 @@ function getActivityOverview(activity: Activity): string {
   return blocks.find((block) => block !== activity.summary && !getActivityMaterials(activity).includes(block)) ?? activity.summary;
 }
 
-function timeBudgetLabel(status: MeetingPlan["timeBudget"]["status"]): string {
-  if (status === "over") return "Over time";
-  if (status === "tight") return "Tight fit";
-  return "Fits time";
-}
-
-function formatMonthLabel(monthKey: string): string {
-  const [year, month] = monthKey.split("-");
-  if (!year || !month) return monthKey;
-  const date = new Date(Number(year), Number(month) - 1, 1);
-  if (Number.isNaN(date.getTime())) return monthKey;
-  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-}
-
-function deriveMonthKey(meetingDate: string, fallback: string): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(meetingDate)) {
-    return meetingDate.slice(0, 7);
-  }
-  return fallback;
+function getActivitySnapshot(activity: Activity): string {
+  return activity.summary?.trim() || "Activity snapshot unavailable.";
 }
 
 function buildSuccessSummary(plan: MeetingPlan): string {
@@ -164,23 +218,227 @@ function buildSuccessSummary(plan: MeetingPlan): string {
   if (!firstRequirement) {
     return "The den stays engaged, finishes the selected activity, and leaves knowing what tonight was meant to teach.";
   }
-  return `Scouts complete ${plan.coverage.length} requirement${plan.coverage.length === 1 ? "" : "s"} with enough time to close calmly and note what still needs to be logged.`;
+  return `Scouts complete ${plan.coverage.length} requirement${plan.coverage.length === 1 ? "" : "s"} and leave with a clear record of what was covered.`;
 }
 
-function buildTimeShortNote(plan: MeetingPlan): string {
-  if (plan.timeBudget.status === "fits") {
-    return "Keep the core requirement activity intact and use the closing reflection only if the den needs it.";
+function buildPlanMaterials(activities: Activity[]): string[] {
+  const materials = new Set<string>();
+  for (const activity of activities) {
+    for (const hint of getActivityMaterials(activity)) {
+      materials.add(hint);
+    }
+    if (/craft|make|draw|color|flag|doodle/i.test(`${activity.name} ${activity.summary} ${activity.previewDetails}`)) {
+      materials.add("Basic craft supplies");
+    }
+    if (/game|circle|share|discussion/i.test(`${activity.name} ${activity.summary} ${activity.previewDetails}`)) {
+      materials.add("Open floor or circle seating");
+    }
+    if (/outside|walk|outdoor|trail|relay/i.test(`${activity.name} ${activity.summary} ${activity.previewDetails}`)) {
+      materials.add("Outdoor movement space or weather-appropriate alternate");
+    }
+  }
+  materials.add("Printed requirement checklist");
+  return Array.from(materials);
+}
+
+function buildPlanCoverage(
+  plan: MeetingPlan,
+  agenda: MeetingAgendaItem[],
+  requirementLookup: Map<string, Requirement>,
+  activityLookup: Map<string, Activity>
+): CoverageItem[] {
+  const requirementIds = new Set<string>(plan.request.requirementIds?.filter(Boolean) ?? []);
+  for (const item of agenda) {
+    if (item.kind === "activity" && item.primaryRequirementId) {
+      requirementIds.add(item.primaryRequirementId);
+    }
   }
 
-  const candidate = [...plan.agenda]
-    .reverse()
-    .find((item) => item.kind === "activity" || item.kind === "transition");
+  const currentCoverage = new Map(plan.coverage.map((item) => [item.requirementId, item] as const));
 
-  if (!candidate) {
-    return "Trim transitions first and keep the requirement-linked work moving.";
+  return Array.from(requirementIds)
+    .map((requirementId) => {
+      const requirement = requirementLookup.get(requirementId);
+      const fallback = currentCoverage.get(requirementId) ?? null;
+      if (!requirement && fallback) {
+        return fallback;
+      }
+
+      const relatedItems = agenda.filter(
+        (item) => item.kind === "activity" && item.primaryRequirementId === requirementId && item.selectedActivityId
+      );
+      const matchedItem =
+        relatedItems.find((item) => {
+          const selectedActivity = item.selectedActivityId ? activityLookup.get(item.selectedActivityId) ?? null : null;
+          return Boolean(selectedActivity && selectedActivity.requirementId === requirementId);
+        }) ?? relatedItems[0] ?? null;
+      const selectedActivity = matchedItem?.selectedActivityId ? activityLookup.get(matchedItem.selectedActivityId) ?? null : null;
+      const coverageStatus: CoverageStatus = !selectedActivity
+        ? "uncovered"
+        : selectedActivity.requirementId === requirementId
+          ? "automatic"
+          : "leader-review";
+
+      const adventure =
+        plan.adventures.find((item) => item.id === requirement?.adventureId) ??
+        (fallback ? plan.adventures.find((item) => item.id === fallback.adventureId) ?? null : null);
+
+      return {
+        adventureId: adventure?.id ?? requirement?.adventureId ?? fallback?.adventureId ?? "",
+        adventureName: adventure?.name ?? fallback?.adventureName ?? "Adventure",
+        requirementId,
+        requirementNumber: requirement?.requirementNumber ?? fallback?.requirementNumber ?? 0,
+        requirementText: requirement?.text ?? fallback?.requirementText ?? "",
+        activityId: selectedActivity?.id ?? null,
+        activityName: selectedActivity?.name ?? null,
+        covered: coverageStatus !== "uncovered",
+        coverageStatus,
+        reason:
+          coverageStatus === "automatic"
+            ? `Covered with ${selectedActivity?.name}.`
+            : coverageStatus === "leader-review"
+              ? `Uses ${selectedActivity?.name}. Review the requirement before marking it complete because this activity was suggested for a different requirement or adventure.`
+              : "No official linked activity was found. Leader review is needed before claiming completion."
+      };
+    })
+    .filter((item): item is CoverageItem => Boolean(item.requirementId));
+}
+
+function buildPlanTimeBudget(plan: MeetingPlan, agenda: MeetingAgendaItem[], chosenActivities: Activity[]): TimeBudgetSummary {
+  const fixedMinutes = 20;
+  const minimumSuggestedMinutes = fixedMinutes + chosenActivities.length * 10;
+  const recommendedMinutes = fixedMinutes + chosenActivities.reduce((total, activity) => total + (activity.durationMinutes ?? 15), 0);
+  const plannedMinutes = agenda.reduce((total, item) => total + item.durationMinutes, 0);
+  const delta = plannedMinutes - plan.request.durationMinutes;
+  const warnings: string[] = [];
+
+  if (plannedMinutes > plan.request.durationMinutes) {
+    warnings.push(
+      `This packet is scheduled for ${plannedMinutes} minutes, which is ${delta} minute${delta === 1 ? "" : "s"} over your ${plan.request.durationMinutes}-minute meeting.`
+    );
+  }
+  if (minimumSuggestedMinutes > plan.request.durationMinutes) {
+    warnings.push(
+      `Even a compressed version of these requirements needs about ${minimumSuggestedMinutes} minutes. Consider splitting this meeting across two dates or trimming requirements.`
+    );
+  } else if (recommendedMinutes > plan.request.durationMinutes) {
+    warnings.push(
+      `The selected scope usually needs about ${recommendedMinutes} minutes with the official activities. This meeting can work, but it will be tight unless you simplify delivery.`
+    );
+  } else if (plan.request.durationMinutes - plannedMinutes <= 5) {
+    warnings.push("This plan fits, but it leaves almost no extra buffer for late starts or den discussion.");
   }
 
-  return `Defer or shorten "${candidate.title}" first if the meeting runs long, then capture any unfinished requirement work in Scoutbook later.`;
+  let status: TimeBudgetSummary["status"] = "fits";
+  if (plannedMinutes > plan.request.durationMinutes || minimumSuggestedMinutes > plan.request.durationMinutes) {
+    status = "over";
+  } else if (recommendedMinutes > plan.request.durationMinutes || plan.request.durationMinutes - plannedMinutes <= 5) {
+    status = "tight";
+  }
+
+  return {
+    targetMinutes: plan.request.durationMinutes,
+    plannedMinutes,
+    minimumSuggestedMinutes,
+    recommendedMinutes,
+    activityCount: chosenActivities.length,
+    status,
+    warnings
+  };
+}
+
+function buildPlanParentUpdate(plan: MeetingPlan, coverage: CoverageItem[], materials: string[]): ParentUpdateTemplate {
+  const adventureNames = plan.adventures.map((adventure) => adventure.name);
+  return {
+    subject: `${plan.denName}: ${adventureNames.join(" + ")} meeting update`,
+    message: [
+      `Tonight we will be working on ${adventureNames.join(" and ")}.`,
+      `This meeting is planned for ${labelMeetingSpace(plan.request.meetingSpace).toLowerCase()}. Please dress accordingly.`,
+      `We will focus on ${coverage.map((item) => `${item.adventureName} requirement ${item.requirementNumber}`).join(", ")}.`,
+      `Materials to have ready: ${materials.join(", ")}.`,
+      plan.request.notes.trim() ? `Leader note for families: ${plan.request.notes.trim()}` : "We'll share any follow-up after the meeting."
+    ].join(" ")
+  };
+}
+
+function rebuildMeetingPlan(plan: MeetingPlan, agenda: MeetingAgendaItem[], requirementLookup: Map<string, Requirement>): MeetingPlan {
+  const activityLookup = new Map(plan.activityLibrary.map((activity) => [activity.id, activity]));
+  const selectedActivities = agenda
+    .filter((item): item is MeetingAgendaItem & { selectedActivityId: string } => item.kind === "activity" && Boolean(item.selectedActivityId))
+    .map((item) => activityLookup.get(item.selectedActivityId))
+    .filter((activity): activity is Activity => Boolean(activity));
+
+  let activityIndex = 0;
+  const activityDurations = chunkedDuration(Math.max(plan.request.durationMinutes - 20, 15), Math.max(selectedActivities.length, 1), 10);
+  const nextAgenda = agenda.map((item) => {
+    if (item.kind !== "activity") {
+      return item;
+    }
+    const durationMinutes = activityDurations[activityIndex++] ?? item.durationMinutes;
+    return { ...item, durationMinutes };
+  });
+
+  const coverage = buildPlanCoverage(plan, nextAgenda, requirementLookup, activityLookup);
+  const materials = buildPlanMaterials(selectedActivities);
+  const timeBudget = buildPlanTimeBudget(plan, nextAgenda, selectedActivities);
+
+  return {
+    ...plan,
+    agenda: nextAgenda,
+    coverage,
+    materials,
+    leaderNotes:
+      coverage.some((item) => item.coverageStatus === "leader-review")
+        ? "One or more swapped activities support the meeting but need leader review before you mark the requirement complete."
+        : coverage.some((item) => item.coverageStatus === "uncovered")
+          ? "Do not mark uncovered requirements complete until you review the official requirement text and choose a supporting activity."
+          : "This plan covers each selected requirement with an official linked activity. Confirm completion based on actual meeting delivery.",
+    timeBudget,
+    prepNotes: [
+      `Review the official adventure pages for ${plan.adventures.map((adventure) => adventure.name).join(", ")} before the meeting.`,
+      `Confirm space and setup for a ${labelMeetingSpace(plan.request.meetingSpace).toLowerCase()} meeting.`,
+      `Use the official activity key as a guide: ${labelMeetingSpace(plan.request.meetingSpace)} meeting, energy up to ${plan.request.maxEnergyLevel}, supplies up to ${plan.request.maxSupplyLevel}, prep up to ${plan.request.maxPrepLevel}.`,
+      `Prepare materials for ${selectedActivities.length || 1} main activity block(s).`,
+      ...(plan.request.notes.trim() ? [`Leader constraint: ${plan.request.notes.trim()}`] : [])
+    ],
+    parentUpdate: buildPlanParentUpdate(plan, coverage, materials)
+  };
+}
+
+function buildActivityAgendaItem(
+  plan: MeetingPlan,
+  activity: Activity,
+  requirement: Requirement | null,
+  source: "recommended" | "swapped" | "added"
+): MeetingAgendaItem {
+  const adventure = requirement
+    ? plan.adventures.find((item) => item.id === requirement.adventureId) ?? null
+    : plan.adventures.find((item) => item.id === activity.adventureId) ?? null;
+  const requirementId = requirement?.id ?? activity.requirementId;
+  return {
+    id: newGuid(),
+    kind: "activity",
+    title: activity.name,
+    durationMinutes: activity.durationMinutes ?? 10,
+    description: activity.summary,
+    adventureId: adventure?.id ?? activity.adventureId,
+    adventureName: adventure?.name ?? requirement?.adventureId ?? "",
+    requirementIds: requirementId ? [requirementId] : [],
+    requirementNumber: requirement?.requirementNumber ?? null,
+    requirementText: requirement?.text ?? null,
+    activityId: activity.id,
+    primaryRequirementId: requirementId,
+    selectedActivityId: activity.id,
+    alternativeActivityIds: plan.activityLibrary.filter((candidate) => candidate.id !== activity.id).map((candidate) => candidate.id),
+    selectionSource: source,
+    coverageStatus: requirementId ? "automatic" : null,
+    addedFromSelection: source === "added",
+    editableNotes: activity.summary
+  };
+}
+
+function countActivitiesForRequirement(plan: MeetingPlan, requirementId: string): number {
+  return plan.agenda.filter((item) => item.kind === "activity" && item.primaryRequirementId === requirementId).length;
 }
 
 function describeAgendaItemContext(item: MeetingAgendaItem): string | null {
@@ -191,9 +449,14 @@ function describeAgendaItemContext(item: MeetingAgendaItem): string | null {
 }
 
 export function App() {
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin-config")) {
+    return <AdminConfigPage />;
+  }
+
   const [workspace, setWorkspace] = useState<PackWorkspace | null>(null);
   const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null);
   const [dens, setDens] = useState<DenProfile[]>([]);
+  const [selectedRankId, setSelectedRankId] = useState("");
   const [selectedDenId, setSelectedDenId] = useState("");
   const [trailData, setTrailData] = useState<AdventureTrailData | null>(null);
   const [trailError, setTrailError] = useState("");
@@ -202,20 +465,16 @@ export function App() {
   const [selectedAdventureIds, setSelectedAdventureIds] = useState<string[]>([]);
   const [selectedRequirementIds, setSelectedRequirementIds] = useState<string[]>([]);
   const [request, setRequest] = useState(defaultRequest);
-  const [monthPlan, setMonthPlan] = useState(defaultMonth);
   const [plan, setPlan] = useState<MeetingPlan | null>(null);
-  const [yearPlan, setYearPlan] = useState<YearPlan | null>(null);
-  const [saveMessage, setSaveMessage] = useState("");
+  const [openingMessage, setOpeningMessage] = useState("");
+  const [openingLoading, setOpeningLoading] = useState(false);
+  const [openingGenerated, setOpeningGenerated] = useState(false);
   const [activeAgendaItemId, setActiveAgendaItemId] = useState<string | null>(null);
   const [activePreviewActivityId, setActivePreviewActivityId] = useState<string | null>(null);
+  const [drawerMode, setDrawerMode] = useState<"swap" | "add">("swap");
   const [currentStep, setCurrentStep] = useState(1);
-  const [isCustomizingPlan, setIsCustomizingPlan] = useState(false);
   const [openElectiveBuckets, setOpenElectiveBuckets] = useState<Set<string>>(() => new Set());
-  const [printOptions, setPrintOptions] = useState({
-    beforeScoutsArrive: true,
-    materialsChecklist: true,
-    quickReflect: true
-  });
+  const [removalWarningAgendaItemId, setRemovalWarningAgendaItemId] = useState<string | null>(null);
 
   useEffect(() => {
     api.getWorkspace().then(setWorkspace);
@@ -226,13 +485,49 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!dens.length) {
+    const importedRanks = contentStatus?.importedRanks ?? [];
+    if (!importedRanks.length && !dens.length) {
       return;
     }
-    if (!selectedDenId || !dens.some((den) => den.id === selectedDenId)) {
-      setSelectedDenId(dens[0].id);
+    if (!selectedRankId) {
+      setSelectedRankId(importedRanks[0]?.rankId ?? dens[0]?.rankId ?? "");
+      return;
     }
-  }, [dens, selectedDenId]);
+    if (importedRanks.length && !importedRanks.some((rank) => rank.rankId === selectedRankId)) {
+      setSelectedRankId(importedRanks[0].rankId);
+    }
+  }, [contentStatus, dens, selectedRankId]);
+
+  const rankOptions = useMemo(() => {
+    if (contentStatus?.importedRanks.length) {
+      return contentStatus.importedRanks;
+    }
+    const rankNames = new Map<string, string>();
+    for (const den of dens) {
+      if (!rankNames.has(den.rankId)) {
+        rankNames.set(den.rankId, den.rankId);
+      }
+    }
+    return Array.from(rankNames.entries()).map(([rankId, rankName]) => ({
+      rankId,
+      rankName,
+      refreshedAt: ""
+    }));
+  }, [contentStatus, dens]);
+
+  const denOptions = useMemo(
+    () => dens.filter((den) => !selectedRankId || den.rankId === selectedRankId),
+    [dens, selectedRankId]
+  );
+
+  useEffect(() => {
+    if (!denOptions.length) {
+      return;
+    }
+    if (!selectedDenId || !denOptions.some((den) => den.id === selectedDenId)) {
+      setSelectedDenId(denOptions[0].id);
+    }
+  }, [denOptions, selectedDenId]);
 
   useEffect(() => {
     if (!selectedDenId) {
@@ -258,7 +553,6 @@ export function App() {
       .finally(() => {
         setTrailLoading(false);
       });
-    api.getYearPlan(selectedDenId).then(setYearPlan).catch(() => setYearPlan(null));
   }, [selectedDenId]);
 
   useEffect(() => {
@@ -277,8 +571,7 @@ export function App() {
     });
   }, [selectedAdventureIds, selectedDenId]);
 
-  const selectedDen = dens.find((den) => den.id === selectedDenId) ?? dens[0] ?? null;
-  const selectedDenValue = selectedDen?.id ?? selectedDenId;
+  const selectedDen = denOptions.find((den) => den.id === selectedDenId) ?? dens.find((den) => den.id === selectedDenId) ?? denOptions[0] ?? dens[0] ?? null;
   const allTrailAdventures = useMemo(
     () => trailData?.buckets.flatMap((bucket) => bucket.adventures) ?? [],
     [trailData]
@@ -292,6 +585,9 @@ export function App() {
     [trailData]
   );
   const selectedAdventures = allTrailAdventures.filter((adventure) => selectedAdventureIds.includes(adventure.id));
+  const selectedRank = rankOptions.find((rank) => rank.rankId === selectedRankId) ?? null;
+  const packetTitleBase = selectedRank?.rankName ?? selectedDen?.name.replace(/\s+Imported Den$/, "") ?? "";
+  const packetTitle = packetTitleBase ? `${packetTitleBase} Den` : "Den";
   const activityLookup = useMemo(
     () => new Map((plan?.activityLibrary ?? []).map((activity) => [activity.id, activity])),
     [plan]
@@ -303,6 +599,30 @@ export function App() {
   const activeAgendaItem = useMemo(
     () => plan?.agenda.find((item) => item.id === activeAgendaItemId && item.kind === "activity") ?? null,
     [activeAgendaItemId, plan]
+  );
+  const openingAgendaItem = useMemo(
+    () => plan?.agenda.find((item) => item.kind === "opening") ?? null,
+    [plan]
+  );
+  const printableActivityItems = useMemo(
+    () => {
+      if (!plan) {
+        return [];
+      }
+      return plan.agenda
+        .filter((item): item is MeetingAgendaItem & { selectedActivityId: string } => item.kind === "activity" && Boolean(item.selectedActivityId))
+        .map((agendaItem) => ({
+          agendaItem,
+          activity: activityLookup.get(agendaItem.selectedActivityId) ?? null
+        }))
+        .filter((entry): entry is { agendaItem: MeetingAgendaItem & { selectedActivityId: string }; activity: Activity } => Boolean(entry.activity));
+    },
+    [activityLookup, plan]
+  );
+  const packetReady = useMemo(
+    () =>
+      plan?.agenda.filter((item) => item.kind === "activity").every((item) => Boolean(item.selectedActivityId)) ?? false,
+    [plan]
   );
   const previewOptions = useMemo(() => {
     if (!activeAgendaItem) return [] as Activity[];
@@ -380,42 +700,30 @@ export function App() {
   const otherOptionCards = previewOptionCards.filter((card) => card.section === "other");
   const activePreviewActivity =
     (activePreviewActivityId ? activityLookup.get(activePreviewActivityId) : null) ?? previewOptions[0] ?? null;
-  const trailProgress = yearPlan?.trailProgress ?? trailData?.progress ?? null;
-  const contentRankNames = contentStatus?.importedRanks.map((rank) => rank.rankName).join(", ") ?? "";
-  const activityFieldCoverage = contentStatus?.activityFieldCoverage ?? null;
-  const curriculumCoverageSummary = activityFieldCoverage
-    ? activityFieldCoverage.totalActivities > 0
-      ? `Space ${activityFieldCoverage.meetingSpaceCount}/${activityFieldCoverage.totalActivities} · Energy ${activityFieldCoverage.energyLevelCount}/${activityFieldCoverage.totalActivities} · Supplies ${activityFieldCoverage.supplyLevelCount}/${activityFieldCoverage.totalActivities} · Prep ${activityFieldCoverage.prepLevelCount}/${activityFieldCoverage.totalActivities}`
-      : "No imported activities yet."
-    : "";
-  const selectedRequirementCount = selectedRequirementIds.length;
-  const estimatedMinimumMinutes = useMemo(() => {
-    if (selectedRequirementCount === 0) return 0;
-    const transitionCount = Math.max(selectedRequirementCount - 1, 0);
-    return 20 + transitionCount * 5 + selectedRequirementCount * 10;
-  }, [selectedRequirementCount]);
-  const estimatedRecommendedMinutes = useMemo(() => {
-    if (selectedRequirementCount === 0) return 0;
-    const transitionCount = Math.max(selectedRequirementCount - 1, 0);
-    return 20 + transitionCount * 5 + selectedRequirementCount * 15;
-  }, [selectedRequirementCount]);
-  const preflightWarning = useMemo(() => {
-    if (selectedRequirementCount === 0) return "";
-    if (estimatedMinimumMinutes > request.durationMinutes) {
-      return `This scope is likely too large for ${request.durationMinutes} minutes. Even a compressed version is about ${estimatedMinimumMinutes} minutes.`;
-    }
-    if (estimatedRecommendedMinutes > request.durationMinutes) {
-      return `This meeting can work, but it will be tight. The selected requirements usually take about ${estimatedRecommendedMinutes} minutes.`;
-    }
-    return "";
-  }, [estimatedMinimumMinutes, estimatedRecommendedMinutes, request.durationMinutes, selectedRequirementCount]);
 
   function invalidateGeneratedPlan(): void {
     setPlan(null);
-    setSaveMessage("");
+    setOpeningMessage("");
+    setOpeningLoading(false);
+    setOpeningGenerated(false);
     setActiveAgendaItemId(null);
     setActivePreviewActivityId(null);
-    setIsCustomizingPlan(false);
+    setDrawerMode("swap");
+    setRemovalWarningAgendaItemId(null);
+  }
+
+  function markPacketDirty(): void {
+    setOpeningMessage("");
+    setOpeningLoading(false);
+    setOpeningGenerated(false);
+    setRemovalWarningAgendaItemId(null);
+  }
+
+  function removeAgendaItem(itemId: string): void {
+    if (!plan) return;
+    const nextAgenda = plan.agenda.filter((agendaItem) => agendaItem.id !== itemId);
+    applyAgendaUpdate(nextAgenda, null);
+    setActivePreviewActivityId(null);
   }
 
   function toggleAdventure(adventureId: string): void {
@@ -456,8 +764,26 @@ export function App() {
     });
     setPlan(nextPlan);
     setCurrentStep(4);
-    setIsCustomizingPlan(false);
-    setSaveMessage("");
+    setOpeningGenerated(false);
+  }
+
+  async function handleGenerateOpening(): Promise<void> {
+    if (!plan || !openingAgendaItem) return;
+    if (!packetReady || openingGenerated) {
+      return;
+    }
+    setOpeningLoading(true);
+    setOpeningMessage("");
+    try {
+      const { openingText } = await api.generateOpening(buildOpeningPromptEnvelope(plan));
+      updateAgendaItem(openingAgendaItem.id, { editableNotes: openingText });
+      setOpeningMessage("Opening generated.");
+      setOpeningGenerated(true);
+    } catch (error) {
+      setOpeningMessage(error instanceof Error ? error.message : "Unable to generate opening right now.");
+    } finally {
+      setOpeningLoading(false);
+    }
   }
 
   function updateAgendaItem(itemId: string, patch: Partial<MeetingAgendaItem>): void {
@@ -468,43 +794,72 @@ export function App() {
     );
   }
 
-  async function handleSave(): Promise<void> {
-    if (!plan || !selectedDen) return;
-    const resolvedMonthKey = deriveMonthKey(request.meetingDate, monthPlan.monthKey);
-    const resolvedMonthLabel = monthPlan.monthLabel || formatMonthLabel(resolvedMonthKey);
-    await api.savePlan({
-      denId: selectedDen.id,
-      title: `${selectedDen.name} - ${plan.adventures.map((adventure) => adventure.name).join(" + ")}`,
-      plannedDate: request.meetingDate || null,
-      monthKey: resolvedMonthKey,
-      monthLabel: resolvedMonthLabel,
-      theme: monthPlan.theme,
-      payload: plan
+  function applyAgendaUpdate(nextAgenda: MeetingAgendaItem[], nextActiveAgendaItemId: string | null = activeAgendaItemId): void {
+    setPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      const nextPlan = rebuildMeetingPlan(current, nextAgenda, requirementLookup);
+      return nextPlan;
     });
-    setSaveMessage("Saved to the den year plan.");
-    setYearPlan(await api.getYearPlan(selectedDen.id));
+    setActiveAgendaItemId(nextActiveAgendaItemId);
+    setOpeningGenerated(false);
+    setOpeningMessage("");
+    setRemovalWarningAgendaItemId(null);
   }
 
-  async function handleSwap(selectedActivityId: string): Promise<void> {
+  function handleUseActivity(selectedActivityId: string): void {
     if (!plan || !activeAgendaItem) return;
-    const nextPlan = await api.swapActivity({
-      plan,
-      agendaItemId: activeAgendaItem.id,
-      selectedActivityId
-    });
-    setPlan(nextPlan);
+    const selectedActivity = activityLookup.get(selectedActivityId);
+    if (!selectedActivity) return;
+    const requirement =
+      selectedActivity.requirementId ? requirementLookup.get(selectedActivity.requirementId) ?? null : null;
+    const currentIndex = plan.agenda.findIndex((item) => item.id === activeAgendaItem.id);
+    if (currentIndex < 0) {
+      return;
+    }
+    const nextAgenda = [...plan.agenda];
+
+    if (
+      drawerMode === "swap" &&
+      activeAgendaItem.primaryRequirementId &&
+      selectedActivity.requirementId === activeAgendaItem.primaryRequirementId
+    ) {
+      nextAgenda[currentIndex] = {
+        ...buildActivityAgendaItem(plan, selectedActivity, requirement ?? null, activeAgendaItem.selectionSource ?? "swapped"),
+        id: activeAgendaItem.id,
+        durationMinutes: activeAgendaItem.durationMinutes,
+        selectionSource: activeAgendaItem.selectionSource ?? "swapped",
+        addedFromSelection: activeAgendaItem.addedFromSelection
+      };
+      applyAgendaUpdate(nextAgenda, activeAgendaItem.id);
+      setActivePreviewActivityId(selectedActivityId);
+      return;
+    }
+
+    const nextAgendaItem = buildActivityAgendaItem(plan, selectedActivity, requirement ?? null, "added");
+    const insertIndex = nextAgenda.findIndex((item) => item.kind === "closing");
+    if (insertIndex >= 0) {
+      nextAgenda.splice(insertIndex, 0, nextAgendaItem);
+    } else {
+      nextAgenda.push(nextAgendaItem);
+    }
+    applyAgendaUpdate(nextAgenda, nextAgendaItem.id);
     setActivePreviewActivityId(selectedActivityId);
-    setIsCustomizingPlan(true);
   }
 
-  async function handleDuplicate(savedPlan: SavedMeetingPlan): Promise<void> {
-    if (!selectedDen) return;
-    await api.duplicatePlan(savedPlan.id, monthPlan.monthKey, monthPlan.monthLabel, monthPlan.theme);
-    setYearPlan(await api.getYearPlan(selectedDen.id));
+  function openAddActivityDrawer(): void {
+    if (!plan) return;
+    const lastActivity = [...plan.agenda].reverse().find((item) => item.kind === "activity");
+    if (!lastActivity?.selectedActivityId) return;
+    setDrawerMode("add");
+    setActiveAgendaItemId(lastActivity.id);
+    setActivePreviewActivityId(lastActivity.selectedActivityId);
+    setRemovalWarningAgendaItemId(null);
   }
 
   const stepReady = {
-    1: Boolean(selectedDen),
+    1: Boolean(selectedRankId),
     2: selectedAdventureIds.length > 0,
     3: selectedRequirementIds.length > 0,
     4: Boolean(plan)
@@ -573,13 +928,14 @@ export function App() {
               </button>
             ))}
           </div>
+          <p className="stepper-hint">Complete each step to unlock the next one.</p>
 
           {currentStep === 1 ? (
             <div className="step-panel">
               <div className="panel-header">
                 <div>
                   <h2>Step 1 · Den and Meeting Basics</h2>
-                  <p>Choose the den, then set the meeting shape and activity limits.</p>
+                  <p>Set the den, meeting date, and planning limits.</p>
                 </div>
               </div>
 
@@ -587,95 +943,65 @@ export function App() {
                 <section className="setup-section">
                   <div className="setup-section-head">
                     <span className="section-eyebrow">Meeting Basics</span>
-                    <p>Who, when, and how long tonight’s meeting needs to run.</p>
+                    <p>Choose the rank and date for tonight’s meeting.</p>
                   </div>
                   <div className="setup-grid setup-grid-basics">
-                    <label>
-                      Den
+                    <label className="setup-field setup-field-rank">
+                      Rank
                       <select
-                        value={selectedDenValue}
+                        className="basic-select"
+                        value={selectedRankId}
                         onChange={(event) => {
-                          setSelectedDenId(event.target.value);
+                          const nextRankId = event.target.value;
+                          setSelectedRankId(nextRankId);
+                          const nextDen = dens.find((den) => den.rankId === nextRankId) ?? dens[0] ?? null;
+                          setSelectedDenId(nextDen?.id ?? "");
                           setSelectedAdventureIds([]);
                           setSelectedRequirementIds([]);
                           invalidateGeneratedPlan();
                         }}
                       >
-                        {dens.map((den) => (
-                          <option key={den.id} value={den.id}>
-                            {den.name} ({den.leaderName})
+                        {rankOptions.map((rank) => (
+                          <option key={rank.rankId} value={rank.rankId}>
+                            {rank.rankName}
                           </option>
-                          ))}
+                        ))}
                       </select>
                     </label>
-                    <div className="setup-basics-mini">
-                      <label>
-                        Meeting Date
-                        <input
-                          type="date"
-                          value={request.meetingDate}
-                          onChange={(event) => {
-                            const nextDate = event.target.value;
-                            const nextMonthKey = deriveMonthKey(nextDate, monthPlan.monthKey);
-                            setRequest((current) => ({ ...current, meetingDate: nextDate }));
-                            setMonthPlan((current) => ({
-                              ...current,
-                              monthKey: nextMonthKey,
-                              monthLabel: formatMonthLabel(nextMonthKey)
-                            }));
-                            invalidateGeneratedPlan();
-                          }}
-                        />
-                      </label>
-
-                      <label>
-                        Minutes
-                        <input
-                          type="number"
-                          min={30}
-                          max={120}
-                          value={request.durationMinutes}
-                          onChange={(event) => {
-                            setRequest((current) => ({ ...current, durationMinutes: Number(event.target.value) }));
-                            invalidateGeneratedPlan();
-                          }}
-                        />
-                      </label>
-
-                      <label>
-                        Scouts
-                        <input
-                          type="number"
-                          min={1}
-                          max={16}
-                          value={request.scoutCount}
-                          onChange={(event) => {
-                            setRequest((current) => ({ ...current, scoutCount: Number(event.target.value) }));
-                            invalidateGeneratedPlan();
-                          }}
-                        />
-                      </label>
-                    </div>
+                    <label className="setup-field setup-field-date">
+                      Meeting Date
+                      <input
+                        type="date"
+                        value={request.meetingDate}
+                        onChange={(event) => {
+                          setRequest((current) => ({ ...current, meetingDate: event.target.value }));
+                          invalidateGeneratedPlan();
+                        }}
+                      />
+                    </label>
                   </div>
                 </section>
 
                 <section className="setup-section">
                   <div className="setup-section-head">
                     <span className="section-eyebrow">Activity Constraints</span>
-                    <p>Use the official activity key to steer the recommendations.</p>
+                    <p>Soft preferences. The planner looks for the best-fit official activity.</p>
                   </div>
                   <div className="setup-grid setup-grid-constraints">
-                    <label>
-                      Meeting Space
-                      <span className="tooltip-wrap">
-                        <button type="button" className="control-help" aria-label="Meeting space help">
-                          i
-                        </button>
-                        <span className="tooltip-popover" role="tooltip">
-                          Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight&apos;s meeting.
+                    <label className="setup-field setup-field-space">
+                      <span className="setup-field-head">
+                        <span>Meeting Space</span>
+                        <span className="tooltip-wrap">
+                          <button type="button" className="control-help" aria-label="Meeting space help">
+                            i
+                          </button>
+                          <span className="tooltip-popover" role="tooltip">
+                            Indoor, outing with travel, or outdoor. Use the most realistic setting for tonight&apos;s meeting.
+                          </span>
                         </span>
                       </span>
                       <select
+                        className="basic-select"
                         aria-label="Meeting Space"
                         value={request.meetingSpace}
                         onChange={(event) => {
@@ -704,17 +1030,8 @@ export function App() {
                 </section>
               </div>
 
-              {selectedDen ? (
-                <div className="callout">
-                  <strong>{selectedDen.name}</strong>
-                  <p>
-                    {selectedDen.meetingLocation} · {selectedDen.typicalMeetingDay}
-                  </p>
-                </div>
-              ) : null}
-
               <div className="wizard-actions">
-                <button className="primary-button" disabled={!selectedDen} onClick={() => setCurrentStep(2)}>
+                <button className="primary-button" disabled={!selectedRankId} onClick={() => setCurrentStep(2)}>
                   Continue to Adventure Trail
                 </button>
               </div>
@@ -726,6 +1043,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 2 · Choose Adventures From the Trail</h2>
+                  <p>Choose the adventures that belong in tonight’s plan.</p>
                 </div>
               </div>
 
@@ -738,12 +1056,10 @@ export function App() {
                       <div className="trail-section-head">
                         <div>
                           <span className="section-eyebrow">Required Trail</span>
-                          <p className="subtle-line">These adventures shape the rank path and should stay easy to scan.</p>
                         </div>
                       </div>
                       <div className="trail-grid trail-grid-required">
                         {requiredTrailBuckets.map((bucket) => {
-                  const progressBucket = trailProgress?.buckets.find((item) => item.key === bucket.key);
                   const content = (
                     <div className="trail-options">
                       {bucket.adventures.length ? (
@@ -773,7 +1089,7 @@ export function App() {
                       </div>
                       {content}
                     </article>
-                  );
+                          );
                         })}
                       </div>
 
@@ -806,11 +1122,6 @@ export function App() {
                           );
                           return (
                             <article key={bucket.key} className="trail-card trail-card-elective">
-                              <div className="trail-card-header">
-                                <div>
-                                  <h3>{bucket.label}</h3>
-                                </div>
-                              </div>
                               {content}
                             </article>
                           );
@@ -837,7 +1148,7 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 3 · Narrow Requirements</h2>
-                  <p>All requirements from the selected adventures are included by default. Trim the meeting scope here if you only want part of an adventure tonight.</p>
+                  <p>Refine the requirement set before generating the packet.</p>
                 </div>
               </div>
 
@@ -845,31 +1156,34 @@ export function App() {
                 <strong>Selected adventures</strong>
                 <p>{selectedAdventures.map((adventure) => adventure.name).join(", ") || "None selected yet."}</p>
               </div>
-              {selectedRequirementCount > 0 ? (
-                <div className="callout">
-                  <strong>Time estimate</strong>
-                  <p>
-                    Minimum likely time: {estimatedMinimumMinutes} min · Typical official-activity range: about {estimatedRecommendedMinutes} min
-                  </p>
-                  {preflightWarning ? <p>{preflightWarning}</p> : <p>This scope should fit the current meeting length.</p>}
-                </div>
-              ) : null}
-
-              <div className="wizard-inline-actions">
-                <button className="text-button" onClick={() => setSelectedRequirementIds(requirements.map((requirement) => requirement.id))}>
-                  Select all requirements
-                </button>
-                <button className="text-button" onClick={() => setSelectedRequirementIds([])}>
-                  Clear all
-                </button>
-              </div>
 
               <div className="requirements-grid">
                 {selectedAdventures.map((adventure) => {
                   const adventureRequirements = requirements.filter((requirement) => requirement.adventureId === adventure.id);
+                  const adventureRequirementIds = adventureRequirements.map((requirement) => requirement.id);
                   return (
                     <article key={adventure.id} className="list-block">
-                      <h3>{adventure.name}</h3>
+                      <div className="list-block-head">
+                        <h3>{adventure.name}</h3>
+                        <div className="wizard-inline-actions">
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              setSelectedRequirementIds((current) => Array.from(new Set([...current, ...adventureRequirementIds])))
+                            }
+                          >
+                            Select all
+                          </button>
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              setSelectedRequirementIds((current) => current.filter((id) => !adventureRequirementIds.includes(id)))
+                            }
+                          >
+                            Clear all
+                          </button>
+                        </div>
+                      </div>
                       {adventureRequirements.map((requirement) => (
                         <label key={requirement.id} className="checkbox-row">
                           <input
@@ -901,13 +1215,13 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step 4 · Leader Packet</h2>
-                  <p>Generate the packet after the den, trail selection, and requirement scope feel right. Review the proposal first, then opt into customization only if you need to adjust the packet.</p>
+                  <p>Review the packet, then print when the plan feels right.</p>
                 </div>
-              {plan ? (
-                <button className="secondary-button" onClick={() => window.print()}>
-                  Print Packet
-                </button>
-              ) : null}
+                <div className="packet-header-actions">
+                  <button className="primary-button" onClick={() => window.print()}>
+                    Print Packet
+                  </button>
+                </div>
               </div>
 
               {!plan ? (
@@ -916,276 +1230,334 @@ export function App() {
                 </div>
               ) : (
                 <div className="packet-workbench">
-                  <aside className="packet-toolbar">
-                    <section className="packet-panel">
-                      <p className="section-eyebrow">Print Preview</p>
-                      <h3>Print settings</h3>
-                      <div className="packet-option-group">
-                        <span className="packet-option-title">Print options</span>
-                        <label className="packet-option">
-                          <input
-                            checked={printOptions.beforeScoutsArrive}
-                            onChange={(event) =>
-                              setPrintOptions((current) => ({ ...current, beforeScoutsArrive: event.target.checked }))
-                            }
-                            type="checkbox"
-                          />
-                          Add leader checklist
-                        </label>
-                        <label className="packet-option">
-                          <input
-                            checked={printOptions.materialsChecklist}
-                            onChange={(event) =>
-                              setPrintOptions((current) => ({ ...current, materialsChecklist: event.target.checked }))
-                            }
-                            type="checkbox"
-                          />
-                          Add materials list
-                        </label>
-                        <label className="packet-option">
-                          <input
-                            checked={printOptions.quickReflect}
-                            onChange={(event) =>
-                              setPrintOptions((current) => ({ ...current, quickReflect: event.target.checked }))
-                            }
-                            type="checkbox"
-                          />
-                          Add reflection notes
-                        </label>
-                      </div>
-                      <button className="primary-button" onClick={() => window.print()}>
-                        Print Packet
-                      </button>
-                    </section>
-
-                    <section className="packet-panel">
-                      <h3>Time budget</h3>
-                      <p className="packet-copy">
-                        Planned minutes: {plan.timeBudget.plannedMinutes} / {plan.timeBudget.targetMinutes} · Minimum likely {plan.timeBudget.minimumSuggestedMinutes} · Recommended {plan.timeBudget.recommendedMinutes}
-                      </p>
-                      <div className={`packet-budget packet-budget-${plan.timeBudget.status}`}>
-                        {timeBudgetLabel(plan.timeBudget.status)}
-                      </div>
-                      {plan.timeBudget.warnings.length ? (
-                        <ul className="packet-list">
-                          {plan.timeBudget.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                        </ul>
-                      ) : (
-                        <p className="packet-copy">The packet fits the selected meeting length with a little room to breathe.</p>
-                      )}
-                    </section>
-                  </aside>
-
                   <section className="packet-canvas">
                     <article className="packet-page">
                       <header className="packet-page-header">
                         <div>
                           <span className="section-eyebrow">Meeting Plan</span>
-                          <h2>{plan.denName}</h2>
+                          <h2>{packetTitle}</h2>
                           <p>
                             {plan.request.meetingDate || "Date TBD"} · {plan.adventures.map((adventure) => adventure.name).join(", ")}
                           </p>
                         </div>
-                        <div className={`packet-budget packet-budget-${plan.timeBudget.status}`}>
-                          {timeBudgetLabel(plan.timeBudget.status)} · {plan.timeBudget.plannedMinutes}/{plan.timeBudget.targetMinutes} min
-                        </div>
                       </header>
 
-                      <div className="packet-meeting-actions">
-                        {!isCustomizingPlan ? (
-                          <button className="secondary-button" onClick={() => setIsCustomizingPlan(true)}>
-                            Customize this plan
-                          </button>
-                        ) : null}
-                        {isCustomizingPlan ? <p className="subtle-line">Customizing is on. Adjust timings or preview alternate activities if you need to.</p> : null}
-                      </div>
-
                       <section className="packet-block">
-                        <h3>Meeting At a Glance</h3>
-                        <p>
-                          Den: {plan.denName} · Space: {labelMeetingSpace(plan.request.meetingSpace)} · Scouts: {plan.request.scoutCount}
-                        </p>
-                        <p>Tonight’s success looks like: {buildSuccessSummary(plan)}</p>
-                      </section>
-
-                      <section className="packet-block">
-                        <h3>Activity Overview</h3>
+                        <h3>Meeting Flow</h3>
                         <div className="packet-activity-list">
-                          {plan.agenda.map((item) => (
-                            <div key={`packet-activity-${item.id}`} className="packet-activity-row">
-                              <div>
-                                <strong>{item.title}</strong>
-                                {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
-                              </div>
-                              <div>
-                                <strong>{item.durationMinutes} min</strong>
-                                <p>{shortenRequirementText(item.editableNotes || item.description, 120)}</p>
-                                {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (() => {
-                                  const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
-                                  const materials = getActivityMaterials(selectedActivity);
-                                  return (
-                                    <div className="packet-activity-meta">
-                                      <p>{describeActivityKey(selectedActivity).join(" · ")}</p>
-                                      <p>{materials.length ? `Materials: ${materials.join(" · ")}` : `Materials / setup: ${shortenRequirementText(getActivityOverview(selectedActivity), 120)}`}</p>
-                                      {item.selectionSource ? (
-                                        <span className={`coverage-chip coverage-${item.coverageStatus ?? "automatic"}`}>
-                                          {item.selectionSource === "recommended"
-                                            ? "Recommended activity"
-                                            : item.selectionSource === "added"
-                                              ? "Leader-added requirement"
-                                              : "Swapped activity"}
-                                        </span>
-                                      ) : null}
-                                      {isCustomizingPlan ? (
+                          {plan.agenda.map((item) =>
+                            item.kind === "opening" && openingAgendaItem ? (
+                              <article key={`packet-opening-${item.id}`} className="packet-activity-row packet-activity-row-card packet-opening-row">
+                                <div className="packet-activity-title-block">
+                                  <div className="packet-activity-head">
+                                    <strong>{item.title}</strong>
+                                    {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
+                                  </div>
+                                </div>
+                                <textarea
+                                  className="packet-opening-textarea"
+                                  aria-label="Opening gathering script"
+                                  value={openingAgendaItem.editableNotes}
+                                  onChange={(event) =>
+                                    updateAgendaItem(openingAgendaItem.id, { editableNotes: event.target.value })
+                                  }
+                                  rows={8}
+                                />
+                                <p className="subtle-line">
+                                  Generate or edit the opening here. It stays editable after generation and is saved with the packet.
+                                </p>
+                                {openingMessage ? <p className="save-message">{openingMessage}</p> : null}
+                                <div className="packet-activity-actions packet-opening-actions">
+                                  <button
+                                    type="button"
+                                    className="packet-activity-explore"
+                                    disabled={openingLoading || openingGenerated || !packetReady}
+                                    onClick={() => void handleGenerateOpening()}
+                                  >
+                                    {openingLoading ? "Generating..." : openingGenerated ? "Opening generated" : "Generate opening"}
+                                  </button>
+                                </div>
+                              </article>
+                            ) : item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (() => {
+                              const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
+                              const keyIndicators = buildActivityKeyIndicators(selectedActivity);
+                              const summary = shortenRequirementText(selectedActivity.summary, 180);
+                              const showRemovalWarning = removalWarningAgendaItemId === item.id;
+                              return (
+                                <article key={`packet-activity-${item.id}`} className="packet-activity-row packet-activity-row-card">
+                                  <button
+                                    type="button"
+                                    className="packet-activity-row-main"
+                                    onClick={() => {
+                                      setActiveAgendaItemId(item.id);
+                                      setActivePreviewActivityId(item.selectedActivityId);
+                                    }}
+                                  >
+                                    <div className="packet-activity-title-block">
+                                      <div className="packet-activity-head">
+                                        <strong>{item.title}</strong>
+                                        {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
+                                      </div>
+                                      <div className="packet-activity-section">
+                                        <span className="packet-activity-label">Activity Key</span>
+                                        <div className="packet-activity-key-grid" aria-hidden="true">
+                                          {keyIndicators.map((indicator) => (
+                                            <span key={`${item.id}-${indicator.label}`} className="packet-activity-key">
+                                              <span className="option-key-icon">{indicator.icon}</span>
+                                              <span>{indicator.label}</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div className="packet-activity-section">
+                                        <span className="packet-activity-label">Summary</span>
+                                        <p>{summary}</p>
+                                      </div>
+                                    </div>
+                                  </button>
+                                  <div className="packet-activity-actions">
+                                    {showRemovalWarning ? (
+                                      <div className="review-banner review-banner-warning packet-remove-warning">
+                                        Removing this activity leaves Requirement{" "}
+                                        {item.primaryRequirementId
+                                          ? requirementLookup.get(item.primaryRequirementId)?.requirementNumber ?? "?"
+                                          : "?"}{" "}
+                                        uncovered.
+                                        <div className="review-banner-actions">
+                                          <button className="text-button" onClick={() => setRemovalWarningAgendaItemId(null)}>
+                                            Keep activity
+                                          </button>
+                                          <button
+                                            className="text-button"
+                                            onClick={() => {
+                                              removeAgendaItem(item.id);
+                                            }}
+                                          >
+                                            Remove anyway
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
                                         <button
-                                          className="text-button"
+                                          type="button"
+                                          className="packet-activity-explore packet-activity-explore-primary"
                                           onClick={() => {
+                                            setDrawerMode("swap");
                                             setActiveAgendaItemId(item.id);
                                             setActivePreviewActivityId(item.selectedActivityId);
                                           }}
                                         >
-                                          Preview and Swap Activity
+                                          Explore or Swap Activity
                                         </button>
-                                      ) : null}
-                                    </div>
-                                  );
-                                })() : null}
+                                        <button
+                                          type="button"
+                                          className="packet-activity-remove packet-activity-remove-secondary"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (!item.primaryRequirementId) return;
+                                            const sameRequirementCount = countActivitiesForRequirement(plan, item.primaryRequirementId);
+                                            if (sameRequirementCount <= 1) {
+                                              setRemovalWarningAgendaItemId(item.id);
+                                              return;
+                                            }
+                                            const nextAgenda = plan.agenda.filter((agendaItem) => agendaItem.id !== item.id);
+                                            applyAgendaUpdate(nextAgenda, null);
+                                            setActivePreviewActivityId(null);
+                                          }}
+                                        >
+                                          Remove activity
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </article>
+                              );
+                            })() : (
+                              <div key={`packet-activity-${item.id}`} className="packet-activity-row">
+                                <div className="packet-activity-head">
+                                  <strong>{item.title}</strong>
+                                  {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
+                                </div>
+                                <p>{shortenRequirementText(item.editableNotes || item.description, 120)}</p>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          )}
+                          <article className="packet-activity-row packet-activity-row-add">
+                            <button
+                              type="button"
+                              className="packet-activity-row-main packet-activity-row-main-add"
+                              onClick={openAddActivityDrawer}
+                            >
+                              <div className="packet-activity-head packet-activity-head-add">
+                                <strong>+ Add another activity</strong>
+                                <p>Open the activity picker and append another official activity to the packet.</p>
+                              </div>
+                              <span className="packet-activity-explore packet-activity-explore-add">Add activity</span>
+                            </button>
+                          </article>
                         </div>
-                      </section>
-
-                      <section className="packet-block">
-                        <h3>If Time Runs Short</h3>
-                        <p>{buildTimeShortNote(plan)}</p>
                       </section>
                     </article>
                   </section>
 
-                  <section className="packet-panel packet-panel-save">
-                    <h3>Save to Year Plan</h3>
-                    <div className="packet-save-grid">
-                      <label>
-                        Year Plan Month
-                        <input
-                          value={monthPlan.monthLabel}
-                          onChange={(event) =>
-                            setMonthPlan((current) => ({ ...current, monthLabel: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Theme
-                        <input
-                          value={monthPlan.theme}
-                          onChange={(event) =>
-                            setMonthPlan((current) => ({ ...current, theme: event.target.value }))
-                          }
-                        />
-                      </label>
-                    </div>
-                    <p className="subtle-line">Month key: {deriveMonthKey(request.meetingDate, monthPlan.monthKey)}</p>
-                    <button className="secondary-button" onClick={() => void handleSave()}>
-                      Save to Year Plan
-                    </button>
-                    {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
-                  </section>
-
                   <section className="print-sheet print-only">
-                    <header className="print-sheet-header">
-                      <div>
-                        <h2>{plan.denName} Leader Packet</h2>
-                        <p>
-                          {plan.request.meetingDate || "Date TBD"} · {plan.adventures.map((adventure) => adventure.name).join(", ")}
-                        </p>
-                      </div>
-                      <div className={`print-budget print-budget-${plan.timeBudget.status}`}>
-                        {timeBudgetLabel(plan.timeBudget.status)} · {plan.timeBudget.plannedMinutes}/{plan.timeBudget.targetMinutes} min
-                      </div>
-                    </header>
+                    <article className="print-stage print-stage-before">
+                      <header className="print-stage-header">
+                        <div>
+                          <p className="section-eyebrow">Print Packet</p>
+                          <h2>Before the Meeting</h2>
+                          <p>Stage materials and review setup notes before the meeting.</p>
+                        </div>
+                        <div className="print-stage-meta">
+                          <strong>{packetTitle}</strong>
+                          <span>{plan.request.meetingDate || "Date TBD"}</span>
+                        </div>
+                      </header>
 
-                    <section className="print-section">
-                      <h3>Meeting At a Glance</h3>
-                      <p>
-                        Den: {plan.denName} · Space: {labelMeetingSpace(plan.request.meetingSpace)} · Scouts: {plan.request.scoutCount}
-                      </p>
-                      <p>
-                        Tonight’s success looks like: {buildSuccessSummary(plan)}
-                      </p>
-                    </section>
-
-                    <section className="print-section">
-                      <h3>Activity Overview</h3>
-                      <div className="print-activity-list">
-                        {plan.agenda.map((item) => (
-                          <div key={`print-activity-${item.id}`} className="print-activity-row">
-                            <div>
-                              <strong>{item.title}</strong>
-                              {describeAgendaItemContext(item) ? <p>{describeAgendaItemContext(item)}</p> : null}
-                            </div>
-                            <div>
-                              <strong>{item.durationMinutes} min</strong>
-                              <p>{shortenRequirementText(item.editableNotes || item.description, 120)}</p>
-                              {item.kind === "activity" && item.selectedActivityId && activityLookup.get(item.selectedActivityId) ? (() => {
-                                const selectedActivity = activityLookup.get(item.selectedActivityId) as Activity;
-                                const materials = getActivityMaterials(selectedActivity);
-                                return (
-                                  <>
-                                    <p>{describeActivityKey(selectedActivity).join(" · ")}</p>
-                                    <p>{materials.length ? `Materials: ${materials.join(" · ")}` : `Materials / setup: ${shortenRequirementText(getActivityOverview(selectedActivity), 120)}`}</p>
-                                  </>
-                                );
-                              })() : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="print-section">
-                      <h3>If Time Runs Short</h3>
-                      <p>{buildTimeShortNote(plan)}</p>
-                    </section>
-
-                    {printOptions.beforeScoutsArrive ? (
                       <section className="print-section">
-                        <h3>Before Scouts Arrive</h3>
-                        <ul className="print-checklist">
-                          <li><span className="print-checkbox" aria-hidden="true" /> Materials out</li>
-                          <li><span className="print-checkbox" aria-hidden="true" /> Opening ready</li>
-                          <li><span className="print-checkbox" aria-hidden="true" /> First activity staged</li>
-                        </ul>
-                      </section>
-                    ) : null}
-
-                    {printOptions.materialsChecklist ? (
-                      <section className="print-section">
-                        <h3>Materials Checklist</h3>
-                        <ul className="print-checklist">
-                          {plan.materials.map((item) => (
-                            <li key={`print-${item}`}>
-                              <span className="print-checkbox" aria-hidden="true" />
-                              {item}
-                            </li>
+                        <h3>Materials</h3>
+                        <div className="print-stage-list">
+                          {printableActivityItems.map(({ agendaItem, activity }) => (
+                            <article key={`print-before-materials-${agendaItem.id}`} className="print-stage-card print-stage-card-compact">
+                              <div className="print-stage-card-head">
+                                <strong>{agendaItem.title}</strong>
+                              </div>
+                              {getActivityMaterials(activity).length ? (
+                                <ul className="print-checklist">
+                                  {getActivityMaterials(activity).map((material) => (
+                                    <li key={`before-${agendaItem.id}-${material}`}>
+                                      <span className="print-checkbox" aria-hidden="true" />
+                                      {material}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="print-empty-note">No materials are listed for this activity.</p>
+                              )}
+                            </article>
                           ))}
-                        </ul>
-                      </section>
-                    ) : null}
-
-                    {printOptions.quickReflect ? (
-                      <section className="print-section">
-                        <h3>Quick Reflect</h3>
-                        <div className="reflect-block">
-                          <strong>What was completed?</strong>
-                          <div className="reflect-lines" />
-                          <strong>What should I log in Scoutbook later?</strong>
-                          <div className="reflect-lines" />
-                          <strong>What do I want to remember for next time?</strong>
-                          <div className="reflect-lines" />
                         </div>
                       </section>
-                    ) : null}
+
+                      <section className="print-section">
+                        <h3>Activities</h3>
+                        <div className="print-stage-list">
+                          {printableActivityItems.map(({ agendaItem, activity }) => (
+                            <article key={`print-before-${agendaItem.id}`} className="print-stage-card print-stage-card-compact">
+                              <div className="print-stage-card-head">
+                                <div>
+                                  <strong>{agendaItem.title}</strong>
+                                </div>
+                              </div>
+                              <section className="print-stage-subsection">
+                                <h4>Before the Meeting</h4>
+                                {renderPrintDirectionSteps(activity.directions?.before) ?? (
+                                  <p className="print-empty-note">No before-the-meeting directions are listed for this activity.</p>
+                                )}
+                              </section>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    </article>
+
+                    <article className="print-stage print-stage-during">
+                      <header className="print-stage-header">
+                        <div>
+                          <p className="section-eyebrow">Print Packet</p>
+                          <h2>During the Meeting</h2>
+                          <p>Keep the opening script and activity details close at hand.</p>
+                        </div>
+                        <div className="print-stage-meta">
+                          <strong>{packetTitle}</strong>
+                          <span>{plan.adventures.map((adventure) => adventure.name).join(", ")}</span>
+                        </div>
+                      </header>
+
+                      <section className="print-section">
+                        <h3>Opening Script</h3>
+                        {openingAgendaItem ? (
+                          <div className="print-opening-script">{openingAgendaItem.editableNotes}</div>
+                        ) : (
+                          <p className="print-empty-note">No opening script is available yet.</p>
+                        )}
+                      </section>
+
+                      <section className="print-section">
+                        <h3>Activities</h3>
+                        <div className="print-stage-list">
+                          {printableActivityItems.map(({ agendaItem, activity }) => (
+                            <article key={`print-during-${agendaItem.id}`} className="print-stage-card">
+                              <div className="print-stage-card-head">
+                                <div>
+                                  <strong>{agendaItem.title}</strong>
+                                  {agendaItem.adventureName ? <p>Adventure · {agendaItem.adventureName}</p> : null}
+                                  {agendaItem.requirementText ? (
+                                    <p className="print-stage-card-context">
+                                      Requirement {agendaItem.requirementNumber ?? "?"} · {agendaItem.requirementText}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="print-stage-card-snapshot">
+                                  <p className="print-stage-card-label">Snapshot</p>
+                                  <p>{shortenRequirementText(agendaItem.requirementText || agendaItem.description, 180)}</p>
+                                </div>
+                              </div>
+                              {renderPrintDirectionSteps(activity.directions?.during) ?? (
+                                <p className="print-empty-note">No during-the-meeting directions are listed for this activity.</p>
+                              )}
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    </article>
+
+                    <article className="print-stage print-stage-after">
+                      <header className="print-stage-header">
+                        <div>
+                          <p className="section-eyebrow">Print Packet</p>
+                          <h2>After the Meeting</h2>
+                          <p>Reset the space and capture quick reflections after the meeting.</p>
+                        </div>
+                        <div className="print-stage-meta">
+                          <strong>{packetTitle}</strong>
+                          <span>Cleanup and reflection</span>
+                        </div>
+                      </header>
+
+                      <section className="print-section">
+                        <h3>Clean Space Checklist</h3>
+                        <ul className="print-checklist">
+                          <li><span className="print-checkbox" aria-hidden="true" /> Floors tidy, with no paper scraps, crumbs, or outside debris</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Tables returned and arranged as they were found</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Chairs stacked or pushed in as needed</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Paint, marker lines, pencil drawings, and other marks removed from surfaces</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Trash, recycling, and used supplies collected</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Shared tools, markers, and activity materials returned to storage</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Lost-and-found sweep completed</li>
+                          <li><span className="print-checkbox" aria-hidden="true" /> Lights, doors, and any borrowed spaces reset</li>
+                        </ul>
+                      </section>
+
+                      <section className="print-section">
+                        <h3>Quick Reflection</h3>
+                        <div className="print-reflect-grid">
+                          <div className="print-reflect-block">
+                            <strong>What was completed?</strong>
+                            <div className="print-reflect-box" />
+                          </div>
+                          <div className="print-reflect-block">
+                            <strong>Notes on per-scout participation</strong>
+                            <div className="print-reflect-box" />
+                          </div>
+                          <div className="print-reflect-block">
+                            <strong>Other reflection points</strong>
+                            <div className="print-reflect-box print-reflect-box-tall" />
+                          </div>
+                        </div>
+                      </section>
+                    </article>
                   </section>
 
                   <div className="wizard-actions wizard-actions-single">
@@ -1199,84 +1571,6 @@ export function App() {
           ) : null}
         </section>
 
-        <aside className="sidebar-stack">
-          {contentStatus ? (
-            <section className="panel">
-              <h2>Curriculum Status</h2>
-              <p className="subtle-line">
-                {contentStatus.datasetMode === "demo"
-                  ? "Demo content only."
-                  : `Official import loaded for ${contentRankNames}.`}
-              </p>
-              <div className="status-grid">
-                <div className="summary-card">
-                  <span>Activity coverage</span>
-                  <strong>{activityFieldCoverage ? `${activityFieldCoverage.totalActivities} activities · ${curriculumCoverageSummary}` : "Not available yet."}</strong>
-                </div>
-                <div className="summary-card">
-                  <span>Materials extracted</span>
-                  <strong>
-                    {activityFieldCoverage
-                      ? activityFieldCoverage.totalActivities > 0
-                        ? `${activityFieldCoverage.materialsCount}/${activityFieldCoverage.totalActivities}`
-                        : String(activityFieldCoverage.materialsCount)
-                      : "Not available yet"}
-                  </strong>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          <section className="panel">
-            <h2>Meeting Scope</h2>
-            <p className="subtle-line">Use the setup steps to trim what appears in the final packet.</p>
-            <div className="summary-card">
-              <span>Selected Adventures</span>
-              <strong>{selectedAdventures.length ? selectedAdventures.map((adventure) => adventure.name).join(", ") : "None yet"}</strong>
-            </div>
-            <div className="summary-card">
-              <span>Selected Requirements</span>
-              <strong>{selectedRequirementIds.length || 0}</strong>
-            </div>
-          </section>
-
-          <section className="panel">
-            <h2>Adventure Trail Progress</h2>
-            <div className="trail-progress-list">
-              {trailProgress?.buckets.map((bucket) => (
-                <div className="summary-card" key={bucket.key}>
-                  <span>{bucket.label}</span>
-                  <strong className="summary-progress">{describeProgress(bucket.completedCount, bucket.targetCount, bucket.required)}</strong>
-                </div>
-              )) ?? <div className="empty-state compact-empty">Select a den to see trail progress.</div>}
-            </div>
-          </section>
-        </aside>
-
-        <section className="panel panel-wide">
-          <h2>Den Year Plan</h2>
-          <p>Saved meetings stay grouped by month so leaders can reuse what worked and still see trail progress across the year.</p>
-          {yearPlan?.months.length ? (
-            <div className="year-plan-list">
-              {yearPlan.months.map((month) => (
-                <article className="year-plan-card" key={month.monthKey}>
-                  <span>{month.monthLabel}</span>
-                  <strong>{month.theme}</strong>
-                  {month.items.map((item) => (
-                    <div key={item.id} className="year-plan-item">
-                      <p>{item.title}</p>
-                      <small>{item.plannedDate || "No date"} · {item.payload.adventures.map((adventure: Adventure) => adventure.name).join(", ")}</small>
-                      {item.recap ? <small>Recap saved</small> : <small>No recap yet</small>}
-                      <button className="text-button" onClick={() => void handleDuplicate(item)}>Reuse in Current Month</button>
-                    </div>
-                  ))}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">Save the first meeting packet to start this den’s year plan.</div>
-          )}
-        </section>
       </main>
 
       {activeAgendaItem && activePreviewActivity ? (
@@ -1295,13 +1589,21 @@ export function App() {
                   </p>
                 ) : null}
               </div>
-              <button className="close-button" onClick={() => setActiveAgendaItemId(null)}>Close</button>
+              <button
+                className="close-button"
+                onClick={() => {
+                  setDrawerMode("swap");
+                  setActiveAgendaItemId(null);
+                }}
+              >
+                Close
+              </button>
             </div>
             <div className="drawer-layout">
               <aside className="options-list">
                 <section className="options-group">
                   <div className="options-group-head">
-                    <h3>Matches this requirement</h3>
+                    <h3>Recommended for this requirement</h3>
                     <p>These activities directly support the selected requirement.</p>
                   </div>
                   <div className="options-grid">
@@ -1336,7 +1638,7 @@ export function App() {
                 {otherOptionCards.length ? (
                   <section className="options-group">
                     <div className="options-group-head">
-                      <h3>Other official activities</h3>
+                      <h3>More official activities</h3>
                       <p>These remain available if you want to stretch, trim, or swap the plan.</p>
                     </div>
                     <div className="options-grid">
@@ -1366,33 +1668,71 @@ export function App() {
                 ) : null}
               </aside>
               <section className="preview-panel">
-                <h3>{activePreviewActivity.name}</h3>
-                <p>{activePreviewActivity.summary}</p>
-                {activePreviewActivity.requirementId ? (
-                  <div className="agenda-requirement">
-                    <strong>
+                <div className="activity-detail-title-row">
+                  <h3>{activePreviewActivity.name}</h3>
+                  {activePreviewActivity.requirementId ? (
+                    <div className="activity-requirement-pill">
                       Requirement {requirementLookup.get(activePreviewActivity.requirementId)?.requirementNumber ?? "?"}
-                    </strong>
-                    <p>{requirementLookup.get(activePreviewActivity.requirementId)?.text ?? "Requirement text unavailable."}</p>
+                    </div>
+                  ) : null}
+                </div>
+                <section className="activity-detail-section activity-key-section">
+                  <div className="activity-key-strip preview-meta">
+                    {buildActivityKeyIndicators(activePreviewActivity).map((detail, index) => (
+                      <span key={`${activePreviewActivity.id}-${index}`}>
+                        <span className="option-key-icon">{detail.icon}</span>
+                        {detail.label}
+                      </span>
+                    ))}
                   </div>
+                </section>
+                <section className="activity-detail-section activity-detail-section-snapshot">
+                  <h4>Activity Snapshot</h4>
+                  {activePreviewActivity.requirementId ? (
+                    <p className="activity-detail-lead">
+                      {requirementLookup.get(activePreviewActivity.requirementId)?.text ?? "Requirement text unavailable."}
+                    </p>
+                  ) : null}
+                  <p>{getActivitySnapshot(activePreviewActivity)}</p>
+                </section>
+                <section className="activity-detail-section activity-detail-section-materials">
+                  <h4>Materials Needed</h4>
+                  {activePreviewActivity.supplyNote ? (
+                    <p className="activity-detail-muted">
+                      <span className="activity-detail-inline-label">Supply Note</span> {activePreviewActivity.supplyNote}
+                    </p>
+                  ) : null}
+                  {getActivityMaterials(activePreviewActivity).length ? (
+                    <ul
+                      className={`activity-material-list ${
+                        getActivityMaterials(activePreviewActivity).length > 3 ? "activity-material-list-columns" : ""
+                      }`}
+                    >
+                      {getActivityMaterials(activePreviewActivity).map((material) => (
+                        <li key={material}>{material}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No supplies are required.</p>
+                  )}
+                </section>
+                {activePreviewActivity.directions ? (
+                  <section className="activity-detail-section activity-detail-section-directions">
+                    <h4>Directions</h4>
+                    {renderDirectionSection("At Home Option", activePreviewActivity.directions.atHomeOption)}
+                    {renderDirectionSection("Before the Meeting", activePreviewActivity.directions.before)}
+                    {renderDirectionSection("During the Meeting", activePreviewActivity.directions.during)}
+                    {renderDirectionSection("After the Meeting", activePreviewActivity.directions.after)}
+                  </section>
                 ) : null}
-                <div className="preview-meta">
-                  {buildActivityKeyIndicators(activePreviewActivity).map((detail, index) => (
-                    <span key={`${activePreviewActivity.id}-${index}`}>
-                      <span className="option-key-icon">{detail.icon}</span>
-                      {detail.label}
-                    </span>
-                  ))}
+                <div className="activity-detail-footer">
+                  {activePreviewActivity.hasAdditionalResources ? (
+                    <span className="activity-detail-footer-note">Additional official resources available on the source page.</span>
+                  ) : null}
+                  <a href={activePreviewActivity.sourceUrl} target="_blank" rel="noreferrer">
+                    View official source
+                  </a>
                 </div>
-                <div className="agenda-requirement">
-                  <strong>Materials</strong>
-                  <p>
-                    {getActivityMaterials(activePreviewActivity).length
-                      ? getActivityMaterials(activePreviewActivity).join(" · ")
-                      : shortenRequirementText(getActivityOverview(activePreviewActivity), 180)}
-                  </p>
-                </div>
-                <p className="preview-details">{getActivityOverview(activePreviewActivity)}</p>
                 {activeAgendaItem.primaryRequirementId &&
                 ((activePreviewActivity.requirementId && activePreviewActivity.requirementId !== activeAgendaItem.primaryRequirementId) ||
                   activePreviewActivity.adventureId !== activeAgendaItem.adventureId) ? (
@@ -1401,9 +1741,8 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="preview-actions">
-                  <a href={activePreviewActivity.sourceUrl} target="_blank" rel="noreferrer">View official source</a>
                   {activePreviewActivity.id !== activeAgendaItem.selectedActivityId ? (
-                    <button className="primary-button" onClick={() => void handleSwap(activePreviewActivity.id)}>
+                    <button className="primary-button" onClick={() => handleUseActivity(activePreviewActivity.id)}>
                       Use This Activity
                     </button>
                   ) : (
